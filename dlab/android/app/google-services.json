@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "897891356376",
+    "project_id": "dlab-10fa7",
+    "storage_bucket": "dlab-10fa7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:897891356376:android:ac9406cca0154c3c9211ad",
+        "android_client_info": {
+          "package_name": "com.dezignlab.dlab"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCi1PVuSIRzou0OGKwhGagDpFriqeHYDzU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

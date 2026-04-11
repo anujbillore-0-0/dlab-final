@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  • base-config: trust system CAs for all HTTPS traffic (Supabase, Google, etc.)
+  • domain-config: allows plain HTTP to app.dezign-lab.com while SSL is not yet configured.
+  REMOVE the domain-config once HTTPS is live on your backend.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">app.dezign-lab.com</domain>
+    </domain-config>
+</network-security-config>
