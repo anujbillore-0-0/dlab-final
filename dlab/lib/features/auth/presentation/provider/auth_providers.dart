@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:logger/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 import '../../../../core/env/env_selector.dart';
@@ -17,31 +18,48 @@ import '../../domain/entities/user_profile.dart';
 import '../../domain/repository/auth_repository.dart';
 
 final loggerProvider = Provider<Logger>((ref) => Logger());
-final envProvider    = Provider((ref) => EnvSelector.current());
+final envProvider = Provider((ref) => EnvSelector.current());
 
 final dioProvider = Provider<Dio>((ref) {
-  final env    = ref.watch(envProvider);
+  final env = ref.watch(envProvider);
   final logger = ref.watch(loggerProvider);
   return DioClient(env: env, logger: logger).dio;
 });
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  final dio    = ref.watch(dioProvider);
+  final dio = ref.watch(dioProvider);
   final remote = AuthRemoteDataSourceImpl(dio);
   return AuthRepositoryImpl(remote);
 });
 
+const profileLocalDisplayNameKey = 'profile_local_display_name';
+const profileLocalPhoneKey = 'profile_local_phone';
+const profileLocalBirthdayKey = 'profile_local_birthday';
+const profileLocalGenderKey = 'profile_local_gender';
+const profileLocalAvatarBase64Key = 'profile_local_avatar_base64';
+
 // ── Auth Status ──────────────────────────────────────────────────────────────
 
-sealed class AuthStatus { const AuthStatus(); }
+sealed class AuthStatus {
+  const AuthStatus();
+}
 
-class AuthUnknown     extends AuthStatus { const AuthUnknown(); }
-class Authenticated   extends AuthStatus {
+class AuthUnknown extends AuthStatus {
+  const AuthUnknown();
+}
+
+class Authenticated extends AuthStatus {
   const Authenticated(this.user);
   final User user;
 }
-class Guest           extends AuthStatus { const Guest(); }
-class Unauthenticated extends AuthStatus { const Unauthenticated(); }
+
+class Guest extends AuthStatus {
+  const Guest();
+}
+
+class Unauthenticated extends AuthStatus {
+  const Unauthenticated();
+}
 
 // ── Notifier ─────────────────────────────────────────────────────────────────
 
@@ -53,7 +71,9 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
 
       switch (data.event) {
         case AuthChangeEvent.signedOut:
-          unawaited(PushNotificationService.instance.clearUserTopicSubscription());
+          unawaited(
+            PushNotificationService.instance.clearUserTopicSubscription(),
+          );
           state = const AsyncValue.data(Unauthenticated());
         case AuthChangeEvent.signedIn:
         case AuthChangeEvent.tokenRefreshed:
@@ -86,14 +106,20 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
     try {
       final supaUser = Supabase.instance.client.auth.currentUser!;
       final provider = supaUser.appMetadata['provider'] as String? ?? 'google';
-      state = AsyncValue.data(Authenticated(User(
-        id: supaUser.id,
-        supabaseUid: supaUser.id,
-        email: supaUser.email ?? '',
-        name: supaUser.userMetadata?['full_name'] as String?,
-        authProvider: provider,
-      )));
-      unawaited(PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser());
+      state = AsyncValue.data(
+        Authenticated(
+          User(
+            id: supaUser.id,
+            supabaseUid: supaUser.id,
+            email: supaUser.email ?? '',
+            name: supaUser.userMetadata?['full_name'] as String?,
+            authProvider: provider,
+          ),
+        ),
+      );
+      unawaited(
+        PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser(),
+      );
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     } finally {
@@ -115,14 +141,20 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
     // Try to enrich from the backend, but fall back to Supabase user data
     // if the backend is unreachable.
     final supaUser = Supabase.instance.client.auth.currentUser!;
-    state = AsyncValue.data(Authenticated(User(
-      id: supaUser.id,
-      supabaseUid: supaUser.id,
-      email: supaUser.email ?? '',
-      name: supaUser.userMetadata?['full_name'] as String?,
-      authProvider: supaUser.appMetadata['provider'] as String? ?? 'email',
-    )));
-    unawaited(PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser());
+    state = AsyncValue.data(
+      Authenticated(
+        User(
+          id: supaUser.id,
+          supabaseUid: supaUser.id,
+          email: supaUser.email ?? '',
+          name: supaUser.userMetadata?['full_name'] as String?,
+          authProvider: supaUser.appMetadata['provider'] as String? ?? 'email',
+        ),
+      ),
+    );
+    unawaited(
+      PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser(),
+    );
   }
 
   // ── Check email exists (register screen) ────────────────────────────────
@@ -135,26 +167,27 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
   // Throws Exception on network/connectivity errors.
   Future<bool> checkEmailExists(String email) async {
     final either = await _repo.checkEmail(email);
-    return either.fold(
-      (failure) {
-        final msg = failure.message.toLowerCase();
-        // Connectivity / timeout errors → user-friendly message.
-        if (msg.contains('no internet') ||
-            msg.contains('timed out') ||
-            msg.contains('timeout') ||
-            msg.contains('connection') ||
-            msg.contains('socket') ||
-            msg.contains('network') ||
-            msg.contains('failed to fetch')) {
-          throw Exception(
-            'Cannot connect to server. Please check your internet connection and try again.',
-          );
-        }
-        // Any other backend error (4xx / 5xx) → surface the real message.
-        throw Exception(failure.message.isNotEmpty ? failure.message : 'Failed to check email. Please try again.');
-      },
-      (exists) => exists,
-    );
+    return either.fold((failure) {
+      final msg = failure.message.toLowerCase();
+      // Connectivity / timeout errors → user-friendly message.
+      if (msg.contains('no internet') ||
+          msg.contains('timed out') ||
+          msg.contains('timeout') ||
+          msg.contains('connection') ||
+          msg.contains('socket') ||
+          msg.contains('network') ||
+          msg.contains('failed to fetch')) {
+        throw Exception(
+          'Cannot connect to server. Please check your internet connection and try again.',
+        );
+      }
+      // Any other backend error (4xx / 5xx) → surface the real message.
+      throw Exception(
+        failure.message.isNotEmpty
+            ? failure.message
+            : 'Failed to check email. Please try again.',
+      );
+    }, (exists) => exists);
   }
 
   // ── Send OTP (signup step 1) ─────────────────────────────────────────────
@@ -231,16 +264,25 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
       );
 
       final supaUser = Supabase.instance.client.auth.currentUser!;
-      state = AsyncValue.data(Authenticated(User(
-        id: supaUser.id,
-        supabaseUid: supaUser.id,
-        email: supaUser.email ?? email,
-        name: name,
-        authProvider: 'email',
-      )));
-      unawaited(PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser());
+      state = AsyncValue.data(
+        Authenticated(
+          User(
+            id: supaUser.id,
+            supabaseUid: supaUser.id,
+            email: supaUser.email ?? email,
+            name: name,
+            authProvider: 'email',
+          ),
+        ),
+      );
+      unawaited(
+        PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser(),
+      );
     } on AuthException catch (e) {
-      state = AsyncValue.error(Exception(_mapSupabaseError(e)), StackTrace.current);
+      state = AsyncValue.error(
+        Exception(_mapSupabaseError(e)),
+        StackTrace.current,
+      );
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     } finally {
@@ -250,10 +292,7 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
 
   // ── Email login ──────────────────────────────────────────────────────────
 
-  Future<void> login({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> login({required String email, required String password}) async {
     _isBusy = true;
     state = const AsyncValue.loading();
     try {
@@ -262,15 +301,24 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
         password: password,
       );
       final supaUser = Supabase.instance.client.auth.currentUser!;
-      state = AsyncValue.data(Authenticated(User(
-        id: supaUser.id,
-        supabaseUid: supaUser.id,
-        email: supaUser.email ?? email,
-        authProvider: 'email',
-      )));
-      unawaited(PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser());
+      state = AsyncValue.data(
+        Authenticated(
+          User(
+            id: supaUser.id,
+            supabaseUid: supaUser.id,
+            email: supaUser.email ?? email,
+            authProvider: 'email',
+          ),
+        ),
+      );
+      unawaited(
+        PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser(),
+      );
     } on AuthException catch (e) {
-      state = AsyncValue.error(Exception(_mapSupabaseError(e)), StackTrace.current);
+      state = AsyncValue.error(
+        Exception(_mapSupabaseError(e)),
+        StackTrace.current,
+      );
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     } finally {
@@ -312,8 +360,8 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
         return;
       }
 
-      final googleAuth  = await googleUser.authentication;
-      final idToken     = googleAuth.idToken;
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
       final accessToken = googleAuth.accessToken;
 
       if (idToken == null) {
@@ -331,17 +379,25 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
       );
 
       final supaUser = Supabase.instance.client.auth.currentUser!;
-      state = AsyncValue.data(Authenticated(User(
-        id: supaUser.id,
-        supabaseUid: supaUser.id,
-        email: supaUser.email ?? '',
-        name: supaUser.userMetadata?['full_name'] as String?,
-        authProvider: 'google',
-      )));
-      unawaited(PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser());
+      state = AsyncValue.data(
+        Authenticated(
+          User(
+            id: supaUser.id,
+            supabaseUid: supaUser.id,
+            email: supaUser.email ?? '',
+            name: supaUser.userMetadata?['full_name'] as String?,
+            authProvider: 'google',
+          ),
+        ),
+      );
+      unawaited(
+        PushNotificationService.instance.syncTopicSubscriptionsForCurrentUser(),
+      );
     } on AuthException catch (e) {
       state = AsyncValue.error(
-          Exception(_mapSupabaseError(e)), StackTrace.current);
+        Exception(_mapSupabaseError(e)),
+        StackTrace.current,
+      );
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     } finally {
@@ -452,7 +508,8 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
 
   String _mapSupabaseError(AuthException e) {
     final msg = e.message.toLowerCase();
-    if (msg.contains('invalid login') || msg.contains('invalid credentials') ||
+    if (msg.contains('invalid login') ||
+        msg.contains('invalid credentials') ||
         msg.contains('wrong password')) {
       return 'Invalid email or password';
     }
@@ -477,8 +534,8 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<AuthStatus>> {
 
 final authStateProvider =
     StateNotifierProvider<AuthStateNotifier, AsyncValue<AuthStatus>>((ref) {
-  return AuthStateNotifier(ref.watch(authRepositoryProvider));
-});
+      return AuthStateNotifier(ref.watch(authRepositoryProvider));
+    });
 
 // ── Profile completeness ─────────────────────────────────────────────────────
 
@@ -497,13 +554,14 @@ final profileProvider = FutureProvider<UserProfile?>((ref) async {
   if (uid == null) return null;
 
   try {
-    final data = await Supabase.instance.client
-        .from('profiles')
-        .select()
-        .eq('id', uid)
-        .maybeSingle();          // returns null instead of 406 when no row exists
+    final data =
+        await Supabase.instance.client
+            .from('profiles')
+            .select()
+            .eq('id', uid)
+            .maybeSingle(); // returns null instead of 406 when no row exists
     if (data == null) return null;
-    return UserProfile.fromJson(data as Map<String, dynamic>);
+    return UserProfile.fromJson(data);
   } catch (_) {
     // Table missing or RLS error — treat as incomplete, don't crash.
     return null;
@@ -519,16 +577,18 @@ class SaveProfileService {
   Future<void> save({
     required String displayName,
     required String phone,
-    required String birthday,   // 'YYYY-MM-DD'
+    required String birthday, // 'YYYY-MM-DD'
     required String gender,
     required bool receivesOffers,
+    String? avatarUrl,
+    String? avatarBase64,
   }) async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) throw Exception('Not authenticated');
 
     debugPrint('[SaveProfile] upserting profile for uid=$uid');
 
-    await Supabase.instance.client.from('profiles').upsert({
+    final payload = <String, dynamic>{
       'id': uid,
       'display_name': displayName,
       'phone': phone,
@@ -536,7 +596,26 @@ class SaveProfileService {
       'gender': gender,
       'receives_offers': receivesOffers,
       'updated_at': DateTime.now().toIso8601String(),
-    });
+    };
+
+    if (avatarUrl != null && avatarUrl.trim().isNotEmpty) {
+      payload['avatar_url'] = avatarUrl.trim();
+    }
+
+    await Supabase.instance.client.from('profiles').upsert(payload);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(profileLocalDisplayNameKey, displayName);
+    await prefs.setString(profileLocalPhoneKey, phone);
+    await prefs.setString(profileLocalBirthdayKey, birthday);
+    await prefs.setString(profileLocalGenderKey, gender);
+    if (avatarBase64 != null) {
+      if (avatarBase64.isEmpty) {
+        await prefs.remove(profileLocalAvatarBase64Key);
+      } else {
+        await prefs.setString(profileLocalAvatarBase64Key, avatarBase64);
+      }
+    }
 
     debugPrint('[SaveProfile] upsert complete — invalidating profileProvider');
 

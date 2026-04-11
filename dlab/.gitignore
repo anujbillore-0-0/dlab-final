@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local secrets / signing files
+serviceAccount.json
+debug_dlab.keystore
+debug_dlab_keystore

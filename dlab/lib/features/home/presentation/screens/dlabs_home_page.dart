@@ -9,6 +9,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../../../core/services/cart_service.dart';
 import '../../../../core/services/wishlist_service.dart';
 import '../../../notifications/presentation/screens/notifications_page.dart';
+import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../wishlist/presentation/screens/wishlist_page.dart';
 import 'checkout_screen.dart';
 import 'product_details_page.dart';
@@ -250,7 +251,8 @@ class _NavItemImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = currentIndex == index;
+    final pageIndex = index > 2 ? index - 1 : index;
+    final isActive = currentIndex == pageIndex;
     return GestureDetector(
       onTap: () => onTap(index),
       child: Column(
@@ -449,15 +451,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openNotifications() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const NotificationsPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
   }
 
   void _openWishlist() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const WishlistPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const WishlistPage()));
   }
 
   Future<void> _triggerVoiceSearch() async {
@@ -685,9 +687,9 @@ class _HomePageState extends State<HomePage> {
       toolbarHeight: 68,
       title: GestureDetector(
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const SearchPage()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const SearchPage()));
         },
         child: Container(
           height: 56,
@@ -2036,7 +2038,9 @@ class _ProductCardState extends State<_ProductCard> {
   int _discountPct() {
     final sp = widget.product.salePrice;
     if (sp == null || widget.product.regularPrice == 0) return 0;
-    return ((widget.product.regularPrice - sp) / widget.product.regularPrice * 100)
+    return ((widget.product.regularPrice - sp) /
+            widget.product.regularPrice *
+            100)
         .round();
   }
 
@@ -2063,11 +2067,11 @@ class _ProductCardState extends State<_ProductCard> {
 
   @override
   Widget build(BuildContext context) {
-    final hasSale = widget.product.salePrice != null &&
+    final hasSale =
+        widget.product.salePrice != null &&
         widget.product.salePrice! < widget.product.regularPrice;
-    final displayPrice = hasSale
-        ? widget.product.salePrice!
-        : widget.product.regularPrice;
+    final displayPrice =
+        hasSale ? widget.product.salePrice! : widget.product.regularPrice;
     final discount = _discountPct();
 
     return GestureDetector(
@@ -2174,9 +2178,10 @@ class _ProductCardState extends State<_ProductCard> {
                                   ? Icons.favorite
                                   : Icons.favorite_border_rounded,
                               size: 16,
-                              color: isLiked
-                                  ? AppColors.primary
-                                  : const Color(0xFF111827),
+                              color:
+                                  isLiked
+                                      ? AppColors.primary
+                                      : const Color(0xFF111827),
                             ),
                           ),
                         ),
@@ -2767,15 +2772,15 @@ class _CategoriesPageState extends State<CategoriesPage> {
   }
 
   void _openNotifications() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const NotificationsPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
   }
 
   void _openWishlist() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const WishlistPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const WishlistPage()));
   }
 
   void _selectIndex(int index) {
@@ -3026,13 +3031,16 @@ class _CategoriesPageState extends State<CategoriesPage> {
                                                         ? 2
                                                         : 2;
                                                 final tileWidth =
-                                                    (w - 24 - ((crossAxisCount - 1) * 12)) /
+                                                    (w -
+                                                        24 -
+                                                        ((crossAxisCount - 1) *
+                                                            12)) /
                                                     crossAxisCount;
                                                 final mainAxisExtent =
-                                                  (tileWidth * 1.25).clamp(
-                                                    238.0,
-                                                    258.0,
-                                                  );
+                                                    (tileWidth * 1.25).clamp(
+                                                      238.0,
+                                                      258.0,
+                                                    );
                                                 return GridView.builder(
                                                   padding: const EdgeInsets.all(
                                                     12,
@@ -3171,9 +3179,9 @@ class _TopHeader extends StatelessWidget {
           const SizedBox(height: 14),
           GestureDetector(
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SearchPage()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const SearchPage()));
             },
             child: Container(
               height: 50,
@@ -3510,7 +3518,8 @@ class _CartPageState extends State<CartPage> {
     };
 
     setState(() {
-      _recommendations = products.where((p) => !excluded.contains(p.id)).toList();
+      _recommendations =
+          products.where((p) => !excluded.contains(p.id)).toList();
     });
   }
 
@@ -3554,7 +3563,8 @@ class _CartPageState extends State<CartPage> {
         id: product.id,
         name: product.name,
         images: product.images,
-        imageUrl: product.images.isNotEmpty ? product.images.first : product.imageUrl,
+        imageUrl:
+            product.images.isNotEmpty ? product.images.first : product.imageUrl,
         salePrice: product.salePrice,
         regularPrice: product.regularPrice,
         quantity: 1,
@@ -3574,15 +3584,23 @@ class _CartPageState extends State<CartPage> {
   double get _selectedItemTotal {
     return _cartItems
         .where((item) => _selectedItemIds.contains(item.id))
-        .fold<double>(0, (sum, item) => sum + (item.regularPrice * item.quantity));
+        .fold<double>(
+          0,
+          (sum, item) => sum + (item.regularPrice * item.quantity),
+        );
   }
 
   double get _selectedDiscount {
-    return _cartItems.where((item) => _selectedItemIds.contains(item.id)).fold<double>(
-      0,
-      (sum, item) =>
-          sum + (((item.regularPrice - (item.salePrice ?? item.regularPrice)) * item.quantity).clamp(0, double.infinity)),
-    );
+    return _cartItems
+        .where((item) => _selectedItemIds.contains(item.id))
+        .fold<double>(
+          0,
+          (sum, item) =>
+              sum +
+              (((item.regularPrice - (item.salePrice ?? item.regularPrice)) *
+                      item.quantity)
+                  .clamp(0, double.infinity)),
+        );
   }
 
   double get _grandTotal => _selectedItemTotal - _selectedDiscount;
@@ -3606,8 +3624,8 @@ class _CartPageState extends State<CartPage> {
         elevation: 0,
         leading: IconButton(
           onPressed:
-              () => Navigator.of(context, rootNavigator: true)
-                  .pushAndRemoveUntil(
+              () =>
+                  Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
                     MaterialPageRoute(
                       builder: (_) => const MainShell(initialIndex: 0),
                     ),
@@ -3632,174 +3650,178 @@ class _CartPageState extends State<CartPage> {
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _CartOrderSummaryCard(
-                  itemTotal: _selectedItemTotal,
-                  discount: _selectedDiscount,
-                  grandTotal: _grandTotal,
-                  onCheckout: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const CheckoutScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 32),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Items (${_cartItems.length.toString().padLeft(2, '0')})',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 20,
-                        color: Colors.black,
-                      ),
-                    ),
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_horiz, color: _muted),
-                      onSelected: (value) async {
-                        if (value == 'select_all') {
-                          setState(() {
-                            _selectedItemIds = _cartItems.map((item) => item.id).toSet();
-                          });
-                        } else if (value == 'clear_selection') {
-                          setState(() {
-                            _selectedItemIds.clear();
-                          });
-                        } else if (value == 'remove_selected') {
-                          await _removeSelected();
-                        }
-                      },
-                      itemBuilder:
-                          (context) => const [
-                            PopupMenuItem(
-                              value: 'select_all',
-                              child: Text('Select all'),
-                            ),
-                            PopupMenuItem(
-                              value: 'clear_selection',
-                              child: Text('Clear selection'),
-                            ),
-                            PopupMenuItem(
-                              value: 'remove_selected',
-                              child: Text('Delete selected'),
-                            ),
-                          ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              ListView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                shrinkWrap: true,
-                itemCount: _cartItems.length,
-                itemBuilder: (context, index) {
-                  final item = _cartItems[index];
-                  return _CartItemCard(
-                    item: item,
-                    selected: _selectedItemIds.contains(item.id),
-                    imageUrlBuilder: _imgUrl,
-                    priceText: _price(_itemDisplayPrice(item)),
-                    onToggleSelected: () {
-                      setState(() {
-                        if (_selectedItemIds.contains(item.id)) {
-                          _selectedItemIds.remove(item.id);
-                        } else {
-                          _selectedItemIds.add(item.id);
-                        }
-                      });
-                    },
-                    onIncrease: () => _increaseQty(item),
-                    onDecrease: () => _decreaseQty(item),
-                    onSaveForLater: () => _saveForLater(item),
-                    onDelete: () => _deleteItem(item),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: _CartOffersBanner(),
-              ),
-              if (_savedItems.isNotEmpty) ...[
-                const SizedBox(height: 24),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 16),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    'Saved for later (${_savedItems.length})',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black,
-                    ),
+                  child: _CartOrderSummaryCard(
+                    itemTotal: _selectedItemTotal,
+                    discount: _selectedDiscount,
+                    grandTotal: _grandTotal,
+                    onCheckout: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CheckoutScreen(),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                const SizedBox(height: 10),
-                ListView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  shrinkWrap: true,
-                  itemCount: _savedItems.length,
-                  itemBuilder: (context, index) {
-                    final item = _savedItems[index];
-                    return _SavedForLaterCard(
-                      item: item,
-                      imageUrlBuilder: _imgUrl,
-                      priceText: _price(_itemDisplayPrice(item)),
-                      onMoveToCart: () => _moveSavedToCart(item),
-                      onDelete: () => _deleteSaved(item),
-                    );
-                  },
-                ),
-              ],
-              const SizedBox(height: 24),
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        'Recommendation Based on Items in your cart',
-                        style: TextStyle(
+                const SizedBox(height: 32),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Items (${_cartItems.length.toString().padLeft(2, '0')})',
+                        style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 20,
                           color: Colors.black,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      height: 282,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _recommendations.length,
-                        itemBuilder: (context, index) {
-                          final product = _recommendations[index];
-                          return _CartRecommendationCard(
-                            product: product,
-                            imageUrlBuilder: _imgUrl,
-                            onAddToCart: () => _addRecommendation(product),
-                          );
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_horiz, color: _muted),
+                        onSelected: (value) async {
+                          if (value == 'select_all') {
+                            setState(() {
+                              _selectedItemIds =
+                                  _cartItems.map((item) => item.id).toSet();
+                            });
+                          } else if (value == 'clear_selection') {
+                            setState(() {
+                              _selectedItemIds.clear();
+                            });
+                          } else if (value == 'remove_selected') {
+                            await _removeSelected();
+                          }
                         },
+                        itemBuilder:
+                            (context) => const [
+                              PopupMenuItem(
+                                value: 'select_all',
+                                child: Text('Select all'),
+                              ),
+                              PopupMenuItem(
+                                value: 'clear_selection',
+                                child: Text('Clear selection'),
+                              ),
+                              PopupMenuItem(
+                                value: 'remove_selected',
+                                child: Text('Delete selected'),
+                              ),
+                            ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  shrinkWrap: true,
+                  itemCount: _cartItems.length,
+                  itemBuilder: (context, index) {
+                    final item = _cartItems[index];
+                    return _CartItemCard(
+                      item: item,
+                      selected: _selectedItemIds.contains(item.id),
+                      imageUrlBuilder: _imgUrl,
+                      priceText: _price(_itemDisplayPrice(item)),
+                      onToggleSelected: () {
+                        setState(() {
+                          if (_selectedItemIds.contains(item.id)) {
+                            _selectedItemIds.remove(item.id);
+                          } else {
+                            _selectedItemIds.add(item.id);
+                          }
+                        });
+                      },
+                      onIncrease: () => _increaseQty(item),
+                      onDecrease: () => _decreaseQty(item),
+                      onSaveForLater: () => _saveForLater(item),
+                      onDelete: () => _deleteItem(item),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: _CartOffersBanner(),
+                ),
+                if (_savedItems.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      'Saved for later (${_savedItems.length})',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black,
                       ),
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 10),
+                  ListView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    itemCount: _savedItems.length,
+                    itemBuilder: (context, index) {
+                      final item = _savedItems[index];
+                      return _SavedForLaterCard(
+                        item: item,
+                        imageUrlBuilder: _imgUrl,
+                        priceText: _price(_itemDisplayPrice(item)),
+                        onMoveToCart: () => _moveSavedToCart(item),
+                        onDelete: () => _deleteSaved(item),
+                      );
+                    },
+                  ),
+                ],
+                const SizedBox(height: 24),
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 24,
+                    horizontal: 10,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Text(
+                          'Recommendation Based on Items in your cart',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 20,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 282,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _recommendations.length,
+                          itemBuilder: (context, index) {
+                            final product = _recommendations[index];
+                            return _CartRecommendationCard(
+                              product: product,
+                              imageUrlBuilder: _imgUrl,
+                              onAddToCart: () => _addRecommendation(product),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3987,7 +4009,10 @@ class _CartItemCard extends StatelessWidget {
                                         ),
                                   ),
                                 )
-                                : const Icon(Icons.laptop_mac, color: Colors.grey),
+                                : const Icon(
+                                  Icons.laptop_mac,
+                                  color: Colors.grey,
+                                ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -4251,19 +4276,13 @@ class _CartOffersBanner extends StatelessWidget {
         children: [
           Text(
             'Save Extra With Offers',
-            style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF111827),
-            ),
+            style: TextStyle(fontSize: 14, color: Color(0xFF111827)),
           ),
           Row(
             children: [
               Text(
                 'See Offers',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                ),
+                style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
               ),
               SizedBox(width: 4),
               Icon(
@@ -4299,12 +4318,15 @@ class _CartRecommendationCard extends StatelessWidget {
     final displayPrice = hasSale ? product.salePrice! : product.regularPrice;
     final discount =
         hasSale
-            ? ((1 - (displayPrice / product.regularPrice)) * 100)
-                .round()
-                .clamp(0, 99)
+            ? ((1 - (displayPrice / product.regularPrice)) * 100).round().clamp(
+              0,
+              99,
+            )
             : 0;
     final displayImage =
-        product.images.isNotEmpty ? product.images.first : (product.imageUrl ?? '');
+        product.images.isNotEmpty
+            ? product.images.first
+            : (product.imageUrl ?? '');
 
     return Container(
       width: 180,
@@ -4342,13 +4364,20 @@ class _CartRecommendationCard extends StatelessWidget {
                                 ),
                           ),
                         )
-                        : const Icon(Icons.laptop, size: 50, color: Colors.grey),
+                        : const Icon(
+                          Icons.laptop,
+                          size: 50,
+                          color: Colors.grey,
+                        ),
               ),
               Positioned(
                 top: 0,
                 left: 0,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFF5500),
                     borderRadius: BorderRadius.circular(20),
@@ -4376,10 +4405,7 @@ class _CartRecommendationCard extends StatelessWidget {
             product.name,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF111827),
-            ),
+            style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
           ),
           const SizedBox(height: 8),
           Text(
@@ -4437,9 +4463,7 @@ class ResponsiveEmptyCartScreen extends StatelessWidget {
             return SingleChildScrollView(
               physics: const ClampingScrollPhysics(),
               child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight,
-                ),
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
                 child: IntrinsicHeight(
                   child: Column(
                     children: [
@@ -4479,13 +4503,15 @@ class ResponsiveEmptyCartScreen extends StatelessWidget {
         children: [
           GestureDetector(
             onTap:
-                () => Navigator.of(context, rootNavigator: true)
-                    .pushAndRemoveUntil(
-                      MaterialPageRoute(
-                        builder: (_) => const MainShell(initialIndex: 0),
-                      ),
-                      (route) => false,
-                    ),
+                () => Navigator.of(
+                  context,
+                  rootNavigator: true,
+                ).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (_) => const MainShell(initialIndex: 0),
+                  ),
+                  (route) => false,
+                ),
             child: const SizedBox(
               width: 40,
               height: 40,
@@ -4632,7 +4658,5 @@ class CartColors {
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
   @override
-  Widget build(BuildContext context) => const Scaffold(
-    body: Center(child: Text('Profile', style: TextStyle(fontSize: 24))),
-  );
+  Widget build(BuildContext context) => const ProfileScreen();
 }

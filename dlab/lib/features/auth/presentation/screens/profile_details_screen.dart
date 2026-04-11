@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 import '../../../../features/home/presentation/screens/dlabs_home_page.dart';
@@ -23,13 +24,14 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
   final TextEditingController _displayNameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _birthdayController = TextEditingController();
-  final TextEditingController _countryCodeController =
-      TextEditingController(text: '1');
+  final TextEditingController _countryCodeController = TextEditingController(
+    text: '1',
+  );
 
-  String  _selectedGender = 'Prefer not to say';
-  bool    _offersChecked   = false;
-  bool    _isFormValid   = false;
-  bool    _isSaving      = false;
+  String _selectedGender = 'Prefer not to say';
+  bool _offersChecked = false;
+  bool _isFormValid = false;
+  bool _isSaving = false;
   String? _saveError;
 
   // Raw DateTime so we can convert to ISO when saving.
@@ -48,11 +50,78 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
     _displayNameController.addListener(_checkFormValidity);
     _phoneController.addListener(_checkFormValidity);
     _birthdayController.addListener(_checkFormValidity);
+    _prefillExistingDetails();
+  }
+
+  Future<void> _prefillExistingDetails() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    String name = prefs.getString(profileLocalDisplayNameKey) ?? '';
+    String phone = prefs.getString(profileLocalPhoneKey) ?? '';
+    String birthday = prefs.getString(profileLocalBirthdayKey) ?? '';
+    String gender = prefs.getString(profileLocalGenderKey) ?? '';
+
+    if (name.isEmpty || phone.isEmpty || birthday.isEmpty || gender.isEmpty) {
+      try {
+        final remote = await ref.read(profileProvider.future);
+        name = name.isEmpty ? (remote?.displayName ?? '') : name;
+        phone = phone.isEmpty ? (remote?.phone ?? '') : phone;
+        birthday = birthday.isEmpty ? (remote?.birthday ?? '') : birthday;
+        gender = gender.isEmpty ? (remote?.gender ?? '') : gender;
+      } catch (_) {
+        // Keep local values only when remote profile is unavailable.
+      }
+    }
+
+    if (!mounted) return;
+
+    if (name.trim().isNotEmpty) {
+      _displayNameController.text = name.trim();
+    }
+
+    if (phone.trim().isNotEmpty) {
+      final normalized = phone.trim().replaceAll(RegExp(r'\s+'), '');
+      if (normalized.startsWith('+')) {
+        final digits = normalized.substring(1);
+        if (digits.length > 10) {
+          _countryCodeController.text = digits.substring(0, digits.length - 10);
+          _phoneController.text = digits.substring(digits.length - 10);
+        } else {
+          _phoneController.text = digits;
+        }
+      } else {
+        _phoneController.text = normalized;
+      }
+    }
+
+    if (birthday.trim().isNotEmpty) {
+      DateTime? parsed;
+      final value = birthday.trim();
+      if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
+        parsed = DateTime.tryParse(value);
+      } else if (RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(value)) {
+        final parts = value.split('/');
+        parsed = DateTime.tryParse('${parts[2]}-${parts[0]}-${parts[1]}');
+      }
+
+      if (parsed != null) {
+        _selectedDate = parsed;
+        _birthdayController.text =
+            '${parsed.month.toString().padLeft(2, '0')}/${parsed.day.toString().padLeft(2, '0')}/${parsed.year}';
+      }
+    }
+
+    if (gender.trim().isNotEmpty) {
+      _selectedGender = gender.trim();
+    }
+
+    _checkFormValidity();
   }
 
   void _checkFormValidity() {
     setState(() {
-      _isFormValid = _displayNameController.text.trim().isNotEmpty &&
+      _isFormValid =
+          _displayNameController.text.trim().isNotEmpty &&
           _phoneController.text.trim().isNotEmpty &&
           _birthdayController.text.trim().isNotEmpty;
     });
@@ -127,30 +196,35 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              ..._genderOptions.map((gender) => ListTile(
-                    title: Text(
-                      gender,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: _selectedGender == gender
-                            ? const Color(0xFF1B4965)
-                            : const Color(0xFF1A1A1A),
-                        fontWeight: _selectedGender == gender
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                      ),
+              ..._genderOptions.map(
+                (gender) => ListTile(
+                  title: Text(
+                    gender,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color:
+                          _selectedGender == gender
+                              ? const Color(0xFF1B4965)
+                              : const Color(0xFF1A1A1A),
+                      fontWeight:
+                          _selectedGender == gender
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                     ),
-                    trailing: _selectedGender == gender
-                        ? const Icon(Icons.check, color: Color(0xFF1B4965))
-                        : null,
-                    onTap: () {
-                      setState(() {
-                        _selectedGender = gender;
-                      });
-                      _checkFormValidity();
-                      Navigator.pop(context);
-                    },
-                  )),
+                  ),
+                  trailing:
+                      _selectedGender == gender
+                          ? const Icon(Icons.check, color: Color(0xFF1B4965))
+                          : null,
+                  onTap: () {
+                    setState(() {
+                      _selectedGender = gender;
+                    });
+                    _checkFormValidity();
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
               const SizedBox(height: 16),
             ],
           ),
@@ -163,23 +237,27 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
     if (!_isFormValid || _isSaving) return;
 
     setState(() {
-      _isSaving  = true;
+      _isSaving = true;
       _saveError = null;
     });
 
     try {
       // Convert MM/DD/YYYY → YYYY-MM-DD for Postgres date column.
-      final iso = _selectedDate != null
-          ? '${_selectedDate!.year}-'
-            '${_selectedDate!.month.toString().padLeft(2, '0')}-'
-            '${_selectedDate!.day.toString().padLeft(2, '0')}'
-          : _birthdayController.text;
+      final iso =
+          _selectedDate != null
+              ? '${_selectedDate!.year}-'
+                  '${_selectedDate!.month.toString().padLeft(2, '0')}-'
+                  '${_selectedDate!.day.toString().padLeft(2, '0')}'
+              : _birthdayController.text;
 
-      await ref.read(saveProfileProvider).save(
-            displayName:    _displayNameController.text.trim(),
-            phone:          '${_countryCodeController.text}${_phoneController.text.trim()}',
-            birthday:       iso,
-            gender:         _selectedGender!,
+      await ref
+          .read(saveProfileProvider)
+          .save(
+            displayName: _displayNameController.text.trim(),
+            phone:
+                '+${_countryCodeController.text}${_phoneController.text.trim()}',
+            birthday: iso,
+            gender: _selectedGender,
             receivesOffers: _offersChecked,
           );
 
@@ -189,7 +267,9 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
             content: const Text('Profile saved successfully!'),
             backgroundColor: const Color(0xFF1B4965),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
             duration: const Duration(seconds: 3),
           ),
         );
@@ -223,20 +303,22 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
   void _showHelp() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Help'),
-        content: const Text(
-            'Fill in your profile details to help us personalize your shopping experience. All fields marked with * are required.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Got it',
-              style: TextStyle(color: Color(0xFF1B4965)),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Help'),
+            content: const Text(
+              'Fill in your profile details to help us personalize your shopping experience. All fields marked with * are required.',
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Got it',
+                  style: TextStyle(color: Color(0xFF1B4965)),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -256,8 +338,9 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                 children: [
                   Expanded(
                     child: SingleChildScrollView(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: horizontalPadding),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: horizontalPadding,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -303,8 +386,9 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                             children: List.generate(3, (i) {
                               return Expanded(
                                 child: Container(
-                                  margin:
-                                      EdgeInsets.only(right: i < 2 ? 10 : 0),
+                                  margin: EdgeInsets.only(
+                                    right: i < 2 ? 10 : 0,
+                                  ),
                                   height: 3,
                                   decoration: BoxDecoration(
                                     color: Colors.black,
@@ -386,8 +470,10 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
 
                           // ── Offers checkbox ──
                           GestureDetector(
-                            onTap: () => setState(
-                                () => _offersChecked = !_offersChecked),
+                            onTap:
+                                () => setState(
+                                  () => _offersChecked = !_offersChecked,
+                                ),
                             child: Row(
                               children: [
                                 AnimatedContainer(
@@ -395,20 +481,26 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                                   width: 16,
                                   height: 16,
                                   decoration: BoxDecoration(
-                                    color: _offersChecked
-                                        ? const Color(0xFF1B4965)
-                                        : Colors.white,
+                                    color:
+                                        _offersChecked
+                                            ? const Color(0xFF1B4965)
+                                            : Colors.white,
                                     border: Border.all(
-                                      color: _offersChecked
-                                          ? const Color(0xFF1B4965)
-                                          : const Color(0xFFE6E6E6),
+                                      color:
+                                          _offersChecked
+                                              ? const Color(0xFF1B4965)
+                                              : const Color(0xFFE6E6E6),
                                     ),
                                     borderRadius: BorderRadius.circular(2),
                                   ),
-                                  child: _offersChecked
-                                      ? const Icon(Icons.check,
-                                          size: 12, color: Colors.white)
-                                      : null,
+                                  child:
+                                      _offersChecked
+                                          ? const Icon(
+                                            Icons.check,
+                                            size: 12,
+                                            color: Colors.white,
+                                          )
+                                          : null,
                                 ),
                                 const SizedBox(width: 10),
                                 const Expanded(
@@ -428,7 +520,7 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                           const SizedBox(height: 24),
 
                           // ── Save error ──
-                          if (_saveError != null) ...[  
+                          if (_saveError != null) ...[
                             Text(
                               _saveError!,
                               style: const TextStyle(
@@ -445,35 +537,40 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                             height: 54,
                             child: ElevatedButton(
                               onPressed:
-                                  (_isFormValid && !_isSaving) ? _onContinue : null,
+                                  (_isFormValid && !_isSaving)
+                                      ? _onContinue
+                                      : null,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: (_isFormValid && !_isSaving)
-                                    ? const Color(0xFF1B4965)
-                                    : const Color(0xFFCCCCCC),
-                                disabledBackgroundColor:
-                                    const Color(0xFFCCCCCC),
+                                backgroundColor:
+                                    (_isFormValid && !_isSaving)
+                                        ? const Color(0xFF1B4965)
+                                        : const Color(0xFFCCCCCC),
+                                disabledBackgroundColor: const Color(
+                                  0xFFCCCCCC,
+                                ),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                               ),
-                              child: _isSaving
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
+                              child:
+                                  _isSaving
+                                      ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                      : const Text(
+                                        'Continue',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w400,
+                                          color: Colors.white,
+                                        ),
                                       ),
-                                    )
-                                  : const Text(
-                                      'Continue',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w400,
-                                        color: Colors.white,
-                                      ),
-                                    ),
                             ),
                           ),
 
@@ -549,8 +646,10 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
             color: Color(0xFF999999),
             height: 1.4,
           ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 14,
+          ),
           border: InputBorder.none,
           isDense: true,
         ),
@@ -596,12 +695,11 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                 ),
                 decoration: const InputDecoration(
                   hintText: '1',
-                  hintStyle: TextStyle(
-                    fontSize: 16,
-                    color: Color(0xFF999999),
+                  hintStyle: TextStyle(fontSize: 16, color: Color(0xFF999999)),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 14,
                   ),
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 2, vertical: 14),
                   border: InputBorder.none,
                   isDense: true,
                 ),
@@ -627,8 +725,10 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                   color: Color(0xFF999999),
                   height: 1.4,
                 ),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 border: InputBorder.none,
                 isDense: true,
               ),
@@ -658,9 +758,10 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
                     : _birthdayController.text,
                 style: TextStyle(
                   fontSize: 16,
-                  color: _birthdayController.text.isEmpty
-                      ? const Color(0xFF999999)
-                      : const Color(0xFF1A1A1A),
+                  color:
+                      _birthdayController.text.isEmpty
+                          ? const Color(0xFF999999)
+                          : const Color(0xFF1A1A1A),
                   height: 1.4,
                 ),
               ),
@@ -668,7 +769,7 @@ class _ProfileDetailsScreenState extends ConsumerState<ProfileDetailsScreen> {
             Icon(
               Icons.calendar_today_outlined,
               size: 20,
-              color: const Color(0xFF1B4965).withOpacity(0.7),
+              color: const Color(0xFF1B4965).withValues(alpha: 0.7),
             ),
           ],
         ),

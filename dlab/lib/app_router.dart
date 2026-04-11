@@ -93,11 +93,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       final location = state.matchedLocation;
 
       final isStaticSplash = location == DLabSplashScreen.routePath;
-      final isOnboarding = location == OnboardingScreen1.routePath ||
+      final isOnboarding =
+          location == OnboardingScreen1.routePath ||
           location == OnboardingScreen2.routePath ||
           location == OnboardingScreen3.routePath;
 
-      final isAuth = location == LoginScreen.routePath ||
+      final isAuth =
+          location == LoginScreen.routePath ||
           location == RegisterScreen.routePath ||
           location == SignUpScreen.routePath ||
           location == SignupVerificationScreen.routePath ||
@@ -105,7 +107,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           location == VerificationScreen.routePath ||
           location == ResetPasswordScreen.routePath;
 
-      final isHome           = location == DLabsHomePage.routePath;
+      final isHome = location == DLabsHomePage.routePath;
       final isProfileDetails = location == ProfileDetailsScreen.routePath;
 
       // While auth is still resolving, don't redirect — wait for real state.
@@ -113,7 +115,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 
       // Check if the user is authenticated or browsing as guest.
       final isAuthenticated = authState.valueOrNull is Authenticated;
-      final isGuest         = authState.valueOrNull is Guest;
+      final isGuest = authState.valueOrNull is Guest;
 
       // Guest → go straight to home; profile-details is never shown for guests.
       if (isGuest && !isHome) return DLabsHomePage.routePath;
@@ -128,8 +130,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           // Wait for profile fetch to complete before deciding.
           if (profileState.isLoading) return null;
 
-          final profileComplete =
-              profileState.valueOrNull?.isComplete ?? false;
+          final profileComplete = profileState.valueOrNull?.isComplete ?? false;
 
           // Incomplete profile → must fill in details first.
           if (!profileComplete && !isProfileDetails) {
@@ -143,6 +144,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         }
 
         return null;
+      }
+
+      // Once onboarding is completed, unauthenticated users should land on register.
+      if (flow == OnboardingFlowState.done && !isAuth) {
+        return RegisterScreen.routePath;
       }
 
       // Phase 1: show static splash for a few seconds.
@@ -166,10 +172,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 
 class _GoRouterRefreshStream extends ChangeNotifier {
   _GoRouterRefreshStream(this.ref) {
-    ref.listen(authStateProvider,       (_, __) => notifyListeners());
-    ref.listen(onboardingFlowProvider,  (_, __) => notifyListeners());
-    ref.listen(profileProvider,         (_, __) => notifyListeners());
-    ref.listen(profileSkippedProvider,  (_, __) => notifyListeners());
+    ref.listen(authStateProvider, (_, __) => notifyListeners());
+    ref.listen(onboardingFlowProvider, (_, __) => notifyListeners());
+    ref.listen(profileProvider, (_, __) => notifyListeners());
+    ref.listen(profileSkippedProvider, (_, __) => notifyListeners());
   }
 
   final Ref ref;
