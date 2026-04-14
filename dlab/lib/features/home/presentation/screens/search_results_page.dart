@@ -33,11 +33,9 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   static const Color _textPrimary = Color(0xFF111827);
   static const Color _muted = Color(0xFF6B7280);
   static const Color _bg = Color(0xFFFFFFFF);
-  static const Color _orange = Color(0xFFFF5500);
   static const Color _border = Color(0xFFCAE9FF);
   static const Color _lightBg = Color(0xFFF9F9F9);
   static const Color _placeholder = Color(0xFF9DB2CE);
-  static const Color _cardBorder = Color(0xFFF2F2F2);
 
   static const _imgProxyBase = 'http://app.dezign-lab.com:3000';
   static const Duration _maxPriceRefreshInterval = Duration(minutes: 15);
@@ -55,7 +53,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   DateTime? _lastPriceMaxFetchedAt;
   RangeValues _currentPriceRange = const RangeValues(0, 1500);
   final Map<int, int> _cartQuantities = <int, int>{};
-  final Map<int, List<VariantModel>> _variantCache = <int, List<VariantModel>>{};
+  final Map<int, List<VariantModel>> _variantCache =
+      <int, List<VariantModel>>{};
   final CartService _cartService = CartService.instance;
 
   List<ProductModel> _results = <ProductModel>[];
@@ -110,7 +109,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         id: product.id,
         name: product.name,
         images: product.images,
-        imageUrl: product.images.isNotEmpty ? product.images.first : product.imageUrl,
+        imageUrl:
+            product.images.isNotEmpty ? product.images.first : product.imageUrl,
         salePrice: product.salePrice,
         regularPrice: product.regularPrice,
         quantity: 1,
@@ -283,6 +283,33 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
     }
   }
 
+  List<String> _tokenizeQuery(String query) {
+    return query
+        .trim()
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((token) => token.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  bool _matchesAllTokens(String searchableText, List<String> tokens) {
+    if (tokens.isEmpty) {
+      return true;
+    }
+    final normalized = searchableText.toLowerCase();
+    return tokens.every(normalized.contains);
+  }
+
+  bool _matchesProductQuery(ProductModel product, List<String> queryTokens) {
+    final searchableText = [
+      product.name,
+      product.shortDescription ?? '',
+      product.description ?? '',
+    ].join(' ');
+
+    return _matchesAllTokens(searchableText, queryTokens);
+  }
+
   Future<void> _fetchProducts({required String query}) async {
     setState(() {
       _isLoading = true;
@@ -290,17 +317,15 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
 
     await _refreshMaxPriceFromDatabase();
 
-    final allProducts = await ProductService.fetchProducts(limit: 120, offset: 0);
-    final normalized = query.trim().toLowerCase();
+    final allProducts = await ProductService.fetchProducts(
+      limit: 120,
+      offset: 0,
+    );
+    final queryTokens = _tokenizeQuery(query);
 
     final filtered =
         allProducts.where((product) {
-          final inName = product.name.toLowerCase().contains(normalized);
-          final inShort =
-              (product.shortDescription ?? '').toLowerCase().contains(normalized);
-          final inDesc =
-              (product.description ?? '').toLowerCase().contains(normalized);
-          return normalized.isEmpty || inName || inShort || inDesc;
+          return _matchesProductQuery(product, queryTokens);
         }).toList();
 
     final random = Random();
@@ -509,8 +534,9 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       filtered = await _filterByVariantColor(filtered, normalizedColor);
     }
 
-    final bool newArrivalsSelected =
-        _selectedPopularFilters.contains('New Arrivals');
+    final bool newArrivalsSelected = _selectedPopularFilters.contains(
+      'New Arrivals',
+    );
     final bool onSaleSelected = _selectedPopularFilters.contains('On Sale');
 
     if (onSaleSelected) {
@@ -520,9 +546,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
             return sale != null && sale < product.regularPrice;
           }).toList();
 
-      filtered.sort(
-        (a, b) => _discountAmount(b).compareTo(_discountAmount(a)),
-      );
+      filtered.sort((a, b) => _discountAmount(b).compareTo(_discountAmount(a)));
     } else if (newArrivalsSelected) {
       filtered.sort((a, b) {
         final DateTime? aDate = a.createdAt;
@@ -555,9 +579,12 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
     final List<ProductModel> colorMatched = <ProductModel>[];
 
     for (final ProductModel product in products) {
-      final List<VariantModel> variants = await _getVariantsForProduct(product.id);
+      final List<VariantModel> variants = await _getVariantsForProduct(
+        product.id,
+      );
       final bool hasColorVariant = variants.any(
-        (variant) => variant.variantName.toLowerCase().contains(normalizedColor),
+        (variant) =>
+            variant.variantName.toLowerCase().contains(normalizedColor),
       );
 
       if (hasColorVariant) {
@@ -596,7 +623,9 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         });
         break;
       case 'Name':
-        products.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        products.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
         break;
       default:
         products.sort((a, b) => b.id.compareTo(a.id));
@@ -613,7 +642,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       _filters.add('$_colourChipPrefix$_selectedColor');
     }
 
-    if (_currentPriceRange.start > 0 || _currentPriceRange.end < _maxDatabasePrice) {
+    if (_currentPriceRange.start > 0 ||
+        _currentPriceRange.end < _maxDatabasePrice) {
       _filters.add(
         '$_priceChipPrefix\$${_currentPriceRange.start.toInt()} - \$${_currentPriceRange.end.toInt()}',
       );
@@ -675,22 +705,24 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   }
 
   void _openNotifications() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const NotificationsPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
   }
 
   void _openWishlist() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const WishlistPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const WishlistPage()));
   }
 
   int _discountPct(ProductModel product) {
     if (product.salePrice == null || product.regularPrice <= 0) {
       return 0;
     }
-    return (((product.regularPrice - product.salePrice!) / product.regularPrice) * 100)
+    return (((product.regularPrice - product.salePrice!) /
+                product.regularPrice) *
+            100)
         .round();
   }
 
@@ -900,11 +932,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                 ),
               ),
             ),
-            Container(
-              width: 1,
-              height: screenWidth * 0.08,
-              color: _border,
-            ),
+            Container(width: 1, height: screenWidth * 0.08, color: _border),
             InkWell(
               borderRadius: BorderRadius.circular(10),
               onTap: _onVoiceTap,
@@ -1007,10 +1035,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
             child: SizedBox(
               width: imageWidth,
               height: imageHeight,
-              child: Image.asset(
-                'assets/no.png',
-                fit: BoxFit.contain,
-              ),
+              child: Image.asset('assets/no.png', fit: BoxFit.contain),
             ),
           ),
         ),
@@ -1023,9 +1048,10 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSectionHeader(
-            title: _searchController.text.trim().isEmpty
-                ? 'Search Results'
-                : _searchController.text.trim(),
+            title:
+                _searchController.text.trim().isEmpty
+                    ? 'Search Results'
+                    : _searchController.text.trim(),
             showSort: true,
           ),
           SizedBox(height: screenWidth * 0.025),
@@ -1111,11 +1137,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         padding: EdgeInsets.symmetric(vertical: 24),
         child: Text(
           'No products found.',
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 14,
-            color: _muted,
-          ),
+          style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: _muted),
         ),
       );
     }
@@ -1221,7 +1243,8 @@ class _SearchProductCardState extends State<_SearchProductCard> {
         final cardHeight = width * (232 / 189);
         final imageHeight = cardHeight * 0.43;
         final buttonHeight = (width * 0.18).clamp(34.0, 40.0);
-        final hasSale = widget.product.salePrice != null &&
+        final hasSale =
+            widget.product.salePrice != null &&
             widget.product.salePrice! < widget.product.regularPrice;
         final displayPrice =
             hasSale ? widget.product.salePrice! : widget.product.regularPrice;
@@ -1231,10 +1254,11 @@ class _SearchProductCardState extends State<_SearchProductCard> {
           onTap: () {
             Navigator.of(context, rootNavigator: true).push(
               MaterialPageRoute(
-                builder: (_) => ProductDetailsPage(
-                  product: widget.product,
-                  sourceTabIndex: 0,
-                ),
+                builder:
+                    (_) => ProductDetailsPage(
+                      product: widget.product,
+                      sourceTabIndex: 0,
+                    ),
               ),
             );
           },
@@ -1255,9 +1279,11 @@ class _SearchProductCardState extends State<_SearchProductCard> {
                       height: imageHeight,
                       width: double.infinity,
                       child:
-                            widget.product.imageUrl != null
+                          widget.product.imageUrl != null
                               ? Image.network(
-                              widget.imageUrlBuilder(widget.product.imageUrl!),
+                                widget.imageUrlBuilder(
+                                  widget.product.imageUrl!,
+                                ),
                                 fit: BoxFit.contain,
                                 alignment: Alignment.center,
                                 errorBuilder:

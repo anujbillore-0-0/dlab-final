@@ -1,7 +1,12 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
+import 'dlabs_home_page.dart';
+import 'product_details_page.dart';
 import 'search_results_page.dart';
 
 class SearchPage extends StatefulWidget {
@@ -13,241 +18,26 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   static const _recentSearchesKey = 'recentSearches';
+  static const _recentSearchesMetaKey = 'recentSearchesMeta';
+  static const _imgProxyBase = 'http://app.dezign-lab.com:3000';
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final stt.SpeechToText _speechToText = stt.SpeechToText();
 
-  List<String> _filteredProducts = [];
-  List<String> _recentSearches = [];
-  bool _isListening = false;
+  List<ProductModel> _allProducts = <ProductModel>[];
+  List<ProductModel> _searchSuggestions = <ProductModel>[];
+  List<ProductModel> _relatedProducts = <ProductModel>[];
+  List<_RecentSearchItem> _recentSearches = <_RecentSearchItem>[];
 
-  final List<String> _allProducts = [
-    'AirPods',
-    'AirPods Pro',
-    'AirPods Max',
-    'Apple Watch',
-    'Apple TV',
-    'Amplifier',
-    'Action Camera',
-    'AV Receiver',
-    'Adapter',
-    'Alarm Clock (Smart)',
-    'Android TV Box',
-    'Bluetooth Earphones',
-    'Bluetooth Speakers',
-    'Batteries',
-    'Blu-ray Player',
-    'Boombox',
-    'Barcode Scanner',
-    'Baby Monitor',
-    'Body Camera',
-    'Broadband Router',
-    'Camera',
-    'Charging Cable',
-    'Computer Monitor',
-    'Controller',
-    'CPU',
-    'Charger',
-    'Calculator',
-    'Car Stereo',
-    'Chromecast',
-    'Capture Card',
-    'Cooling Pad',
-    'Cordless Phone',
-    'CRT Monitor',
-    'Card Reader',
-    'Drone',
-    'Desktop PC',
-    'Dash Cam',
-    'DSLR Camera',
-    'DisplayPort Cable',
-    'Digital Photo Frame',
-    'Docking Station',
-    'Drawing Tablet',
-    'DAC',
-    'Digital Camera',
-    'Earphones',
-    'Earbuds',
-    'Earbuds Wireless',
-    'Ear cleaning tool',
-    'External Hard Drive',
-    'e-Reader',
-    'Ethernet Cable',
-    'Electric Scooter',
-    'Electric Toothbrush',
-    'Extension Cord',
-    'Fitness Tracker',
-    'Flash Drive',
-    'Fan (USB)',
-    'Film Camera',
-    'FM Transmitter',
-    'Floppy Drive',
-    'Fire TV Stick',
-    'Gaming Console',
-    'Gaming Mouse',
-    'GPU',
-    'Gimbal',
-    'Gaming Headset',
-    'Graphics Tablet',
-    'Gamepad',
-    'GPS Tracker',
-    'Gooseneck Microphone',
-    'Gaming Chair',
-    'Headphones',
-    'Home Theater',
-    'HDMI Cable',
-    'Hard Drive',
-    'Hub (USB)',
-    'Hoverboard',
-    'Heart Rate Monitor',
-    'Headphone Stand',
-    'Home Security Camera',
-    'HDD',
-    'iPad',
-    'iPhone',
-    'iMac',
-    'In-ear monitors',
-    'Instant Camera',
-    'Inkjet Printer',
-    'IP Camera',
-    'Intercom System',
-    'IEMs',
-    'Joystick',
-    'Jump Starter (Portable)',
-    'Keyboard',
-    'Kindle',
-    'KVM Switch',
-    'Karaoke Machine',
-    'Keycap Set',
-    'Laptop',
-    'LED TV',
-    'Lens',
-    'Lightning Cable',
-    'Laser Printer',
-    'Lapel Mic',
-    'Light Ring',
-    'Lavalier Microphone',
-    'Laminator',
-    'Laptop Stand',
-    'Mouse',
-    'MicroSD Card',
-    'Microphone',
-    'Monitor',
-    'Motherboard',
-    'Memory Card',
-    'MacBook',
-    'Mechanical Keyboard',
-    'Mac mini',
-    'Mac Studio',
-    'Modem',
-    'MIDI Controller',
-    'Megaphone',
-    'Mousepad',
-    'Noise Cancelling Headphones',
-    'Nintendo Switch',
-    'NAS',
-    'Network Switch',
-    'Night Vision Goggles',
-    'NVMe SSD',
-    'OLED TV',
-    'Oculus Quest',
-    'Over-ear headphones',
-    'Optical Drive',
-    'Oscilloscope',
-    'Outdoor Camera',
-    'On-ear headphones',
-    'Power Bank',
-    'PlayStation',
-    'Projector',
-    'PC Case',
-    'Printer',
-    'Pen Drive',
-    'Portable Monitor',
-    'Power Supply Unit (PSU)',
-    'Phone Case (Battery)',
-    'PA System',
-    'Point-and-Shoot Camera',
-    'Pop Filter',
-    'Power Strip',
-    'QLED TV',
-    'Qi Charger',
-    'Quadcopter',
-    'Router',
-    'RAM',
-    'Ring Light',
-    'Robot Vacuum',
-    'Record Player',
-    'Roku',
-    'Raspberry Pi',
-    'Ring Doorbell',
-    'Radio',
-    'RGB Strip Lights',
-    'Smartphone',
-    'Smartwatch',
-    'Speaker',
-    'SSD',
-    'Soundbar',
-    'Smart TV',
-    'Surge Protector',
-    'Smart Plug',
-    'Smart Bulb',
-    'Server',
-    'Scanner',
-    'Stylus',
-    'Security Camera',
-    'Smart Lock',
-    'Sound Card',
-    'Soldering Iron',
-    'Smart Display',
-    'Tablet',
-    'TV',
-    'Tripod',
-    'Trackpad',
-    'Type-C Cable',
-    'Thumb Drive',
-    'Thermostat (Smart)',
-    'TV Box',
-    'Turntable',
-    'Two-way Radio',
-    'Thunderbolt Dock',
-    'USB Drive',
-    'USB-C Cable',
-    'UPS',
-    'Ultrabook',
-    'USB Hub',
-    'USB Microphone',
-    'USB Switch',
-    'VR Headset',
-    'Video Camera',
-    'VGA Cable',
-    'Vacuum Cleaner (Robot)',
-    'Voice Recorder',
-    'Video Doorbell',
-    'VHS Player',
-    'Vlogging Camera',
-    'Wireless Mouse',
-    'Wireless Keyboard',
-    'Webcam',
-    'WiFi Router',
-    'Wired Earphones',
-    'Walkie Talkie',
-    'Weather Station',
-    'Wireless Charger',
-    'Waterproof Speaker',
-    'Xbox Series X',
-    'Xbox Series S',
-    'Xbox Controller',
-    'XQD Card',
-    'Yagi Antenna',
-    'Zoom Lens',
-    'Zip Drive',
-  ];
+  bool _isListening = false;
+  bool _isLoadingProducts = true;
 
   @override
   void initState() {
     super.initState();
     _loadRecentSearches();
+    _loadProducts();
     _searchController.addListener(_onSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -265,17 +55,113 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
+  String _imgUrl(String url) {
+    if (!kIsWeb) {
+      return url;
+    }
+    return '$_imgProxyBase/api/image-proxy?url=${Uri.encodeComponent(url)}';
+  }
+
+  Future<void> _loadProducts() async {
+    try {
+      final products = await ProductService.fetchProducts(
+        limit: 120,
+        offset: 0,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _allProducts = products;
+        _isLoadingProducts = false;
+      });
+
+      if (_searchController.text.trim().isNotEmpty) {
+        _applyLiveSearch(_searchController.text);
+      }
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _allProducts = <ProductModel>[];
+        _isLoadingProducts = false;
+      });
+    }
+  }
+
   Future<void> _loadRecentSearches() async {
     final prefs = await SharedPreferences.getInstance();
+    final List<String> encodedRecent =
+        prefs.getStringList(_recentSearchesMetaKey) ?? <String>[];
+
+    List<_RecentSearchItem> decoded = encodedRecent
+        .map((entry) {
+          try {
+            final dynamic data = jsonDecode(entry);
+            if (data is Map<String, dynamic>) {
+              return _RecentSearchItem.fromJson(data);
+            }
+          } catch (_) {}
+          return null;
+        })
+        .whereType<_RecentSearchItem>()
+        .where((item) => item.query.trim().isNotEmpty)
+        .toList(growable: false);
+
+    if (decoded.isEmpty) {
+      final List<String> fallback =
+          prefs.getStringList(_recentSearchesKey) ?? <String>[];
+      decoded = fallback
+          .where((query) => query.trim().isNotEmpty)
+          .map((query) => _RecentSearchItem(query: query.trim()))
+          .toList(growable: false);
+    }
+
     if (!mounted) {
       return;
     }
     setState(() {
-      _recentSearches = prefs.getStringList(_recentSearchesKey) ?? [];
+      _recentSearches = decoded;
     });
   }
 
-  Future<void> _saveRecentSearch(String query) async {
+  Future<void> _persistRecentSearches(SharedPreferences prefs) async {
+    await prefs.setStringList(
+      _recentSearchesMetaKey,
+      _recentSearches
+          .map((item) => jsonEncode(item.toJson()))
+          .toList(growable: false),
+    );
+    await prefs.setStringList(
+      _recentSearchesKey,
+      _recentSearches.map((item) => item.query).toList(growable: false),
+    );
+  }
+
+  String? _resolveRecentSearchImage(String query) {
+    final List<String> tokens = _tokenizeQuery(query);
+    if (tokens.isEmpty) {
+      return null;
+    }
+
+    if (_searchSuggestions.isNotEmpty) {
+      return _productImage(_searchSuggestions.first);
+    }
+
+    final ProductModel? bestMatch = _allProducts
+        .where((product) => _matchesProduct(product, tokens))
+        .cast<ProductModel?>()
+        .firstWhere((_) => true, orElse: () => null);
+
+    if (bestMatch == null) {
+      return null;
+    }
+
+    return _productImage(bestMatch);
+  }
+
+  Future<void> _saveRecentSearch(String query, {String? imageUrl}) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
       return;
@@ -283,60 +169,164 @@ class _SearchPageState extends State<SearchPage> {
 
     final prefs = await SharedPreferences.getInstance();
 
-    if (!mounted) {
-      return;
+    final List<_RecentSearchItem> updated = List<_RecentSearchItem>.from(
+      _recentSearches,
+    )..removeWhere(
+      (element) => element.query.toLowerCase() == trimmed.toLowerCase(),
+    );
+
+    updated.insert(0, _RecentSearchItem(query: trimmed, imageUrl: imageUrl));
+    if (updated.length > 5) {
+      updated.removeRange(5, updated.length);
     }
 
-    setState(() {
-      _recentSearches.removeWhere(
-        (element) => element.toLowerCase() == trimmed.toLowerCase(),
-      );
-      _recentSearches.insert(0, trimmed);
-      if (_recentSearches.length > 5) {
-        _recentSearches = _recentSearches.take(5).toList();
-      }
-    });
+    _recentSearches = updated;
+    if (mounted) {
+      setState(() {});
+    }
 
-    await prefs.setStringList(_recentSearchesKey, _recentSearches);
+    await _persistRecentSearches(prefs);
   }
 
   Future<void> _removeRecentSearch(String query) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) {
+    final String normalized = query.trim().toLowerCase();
+    if (normalized.isEmpty) {
       return;
     }
-    setState(() {
-      _recentSearches.remove(query);
-    });
-    await prefs.setStringList(_recentSearchesKey, _recentSearches);
+
+    final List<_RecentSearchItem> updated = List<_RecentSearchItem>.from(
+      _recentSearches,
+    )..removeWhere((item) => item.query.trim().toLowerCase() == normalized);
+
+    _recentSearches = updated;
+    if (mounted) {
+      setState(() {});
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await _persistRecentSearches(prefs);
   }
 
   Future<void> _clearAllRecentSearches() async {
+    _recentSearches = <_RecentSearchItem>[];
+    if (mounted) {
+      setState(() {});
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) {
+    await prefs.remove(_recentSearchesKey);
+    await prefs.remove(_recentSearchesMetaKey);
+  }
+
+  List<String> _tokenizeQuery(String query) {
+    return query
+        .trim()
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((token) => token.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  bool _containsAllTokens(String text, List<String> tokens) {
+    final normalized = text.toLowerCase();
+    return tokens.every(normalized.contains);
+  }
+
+  bool _matchesProduct(ProductModel product, List<String> tokens) {
+    final searchableText = [
+      product.name,
+      product.shortDescription ?? '',
+      product.description ?? '',
+    ].join(' ');
+
+    return _containsAllTokens(searchableText, tokens);
+  }
+
+  double _searchScore(ProductModel product, List<String> tokens) {
+    final name = product.name.toLowerCase();
+    final joinedQuery = tokens.join(' ');
+    double score = 0;
+
+    if (name.startsWith(joinedQuery)) {
+      score += 100;
+    }
+    if (name.contains(joinedQuery)) {
+      score += 60;
+    }
+
+    for (final token in tokens) {
+      if (name.startsWith(token)) {
+        score += 20;
+      }
+      if (name.contains(token)) {
+        score += 10;
+      }
+    }
+
+    return score;
+  }
+
+  void _applyLiveSearch(String queryText) {
+    final tokens = _tokenizeQuery(queryText);
+
+    if (tokens.isEmpty) {
+      setState(() {
+        _searchSuggestions = <ProductModel>[];
+        _relatedProducts = <ProductModel>[];
+      });
       return;
     }
-    setState(() {
-      _recentSearches.clear();
+
+    final matched =
+        _allProducts
+            .where((product) => _matchesProduct(product, tokens))
+            .toList();
+
+    matched.sort((a, b) {
+      final scoreDiff = _searchScore(
+        b,
+        tokens,
+      ).compareTo(_searchScore(a, tokens));
+      if (scoreDiff != 0) {
+        return scoreDiff;
+      }
+      return b.id.compareTo(a.id);
     });
-    await prefs.remove(_recentSearchesKey);
+
+    setState(() {
+      _searchSuggestions = matched.take(5).toList(growable: false);
+      _relatedProducts = matched.take(6).toList(growable: false);
+    });
+  }
+
+  String? _productImage(ProductModel product) {
+    if (product.imageUrl != null && product.imageUrl!.trim().isNotEmpty) {
+      return product.imageUrl;
+    }
+    if (product.images.isNotEmpty && product.images.first.trim().isNotEmpty) {
+      return product.images.first;
+    }
+    return null;
+  }
+
+  void _selectSuggestion(ProductModel product) {
+    _searchController.text = product.name;
+    _searchController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _searchController.text.length),
+    );
+    _applyLiveSearch(product.name);
+  }
+
+  void _openProductDetails(ProductModel product) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProductDetailsPage(product: product, sourceTabIndex: 0),
+      ),
+    );
   }
 
   void _onSearchChanged() {
-    final query = _searchController.text.trim().toLowerCase();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredProducts = [];
-      } else {
-        _filteredProducts =
-            _allProducts.where((product) {
-              final lower = product.toLowerCase();
-              final words = lower.split(' ');
-              return lower.startsWith(query) ||
-                  words.any((word) => word.startsWith(query));
-            }).toList();
-      }
-    });
+    _applyLiveSearch(_searchController.text);
   }
 
   void _handleSearchSubmit(String query) {
@@ -344,12 +334,10 @@ class _SearchPageState extends State<SearchPage> {
     if (trimmed.isEmpty) {
       return;
     }
-    _saveRecentSearch(trimmed);
+    _saveRecentSearch(trimmed, imageUrl: _resolveRecentSearchImage(trimmed));
     FocusScope.of(context).unfocus();
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SearchResultsPage(query: trimmed),
-      ),
+      MaterialPageRoute(builder: (_) => SearchResultsPage(query: trimmed)),
     );
   }
 
@@ -484,7 +472,16 @@ class _SearchPageState extends State<SearchPage> {
               ),
               const SizedBox(height: 12),
               if (searchText.isNotEmpty)
-                Expanded(child: _buildRecommendationsBox())
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        _buildRecommendationsBox(),
+                        _buildRelatedProductsSection(),
+                      ],
+                    ),
+                  ),
+                )
               else if (_recentSearches.isNotEmpty)
                 Expanded(child: _buildRecentSearchesBox()),
             ],
@@ -551,43 +548,152 @@ class _SearchPageState extends State<SearchPage> {
         border: Border.all(color: const Color(0xFFCAE9FF)),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: _filteredProducts.isEmpty
-          ? const Padding(
-              padding: EdgeInsets.all(16),
+      child:
+          _isLoadingProducts
+              ? const Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'Loading products...',
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+              )
+              : _searchSuggestions.isEmpty
+              ? const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'No products found',
+                  style: TextStyle(color: Color(0xFF6B7280)),
+                ),
+              )
+              : ListView.separated(
+                itemCount: _searchSuggestions.length,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                separatorBuilder:
+                    (_, __) => const Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: Color(0xFFCAE9FF),
+                    ),
+                itemBuilder: (context, index) {
+                  final product = _searchSuggestions[index];
+                  final imageUrl = _productImage(product);
+
+                  return ListTile(
+                    dense: true,
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFEDF2F7)),
+                      ),
+                      child:
+                          imageUrl == null
+                              ? const Icon(
+                                Icons.devices_other_rounded,
+                                size: 20,
+                                color: Color(0xFF9DB2CE),
+                              )
+                              : ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.network(
+                                  _imgUrl(imageUrl),
+                                  fit: BoxFit.contain,
+                                  errorBuilder:
+                                      (_, __, ___) => const Icon(
+                                        Icons.devices_other_rounded,
+                                        size: 20,
+                                        color: Color(0xFF9DB2CE),
+                                      ),
+                                ),
+                              ),
+                    ),
+                    title: Text(
+                      product.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 15,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                    onTap: () => _selectSuggestion(product),
+                  );
+                },
+              ),
+    );
+  }
+
+  Widget _buildRelatedProductsSection() {
+    if (_isLoadingProducts) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Related Products',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (_relatedProducts.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
               child: Text(
-                'No products found',
-                style: TextStyle(color: Color(0xFF6B7280)),
+                'No related products found.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF6B7280),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             )
-          : ListView.separated(
-              itemCount: _filteredProducts.length,
-              separatorBuilder: (_, __) => const Divider(
-                height: 1,
-                thickness: 0.5,
-                color: Color(0xFFCAE9FF),
-              ),
-              itemBuilder: (context, index) {
-                final product = _filteredProducts[index];
-                return ListTile(
-                  dense: true,
-                  title: Text(
-                    product,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 15,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                  onTap: () {
-                    _searchController.text = product;
-                    _searchController.selection = TextSelection.fromPosition(
-                      TextPosition(offset: _searchController.text.length),
-                    );
-                    _handleSearchSubmit(product);
-                  },
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const gap = 10.0;
+                final cardWidth = (constraints.maxWidth - gap) / 2;
+
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children:
+                      _relatedProducts
+                          .map(
+                            (product) => SizedBox(
+                              width: cardWidth,
+                              child: _InlineRelatedProductCard(
+                                product: product,
+                                imageUrlBuilder: _imgUrl,
+                                onTap: () => _openProductDetails(product),
+                              ),
+                            ),
+                          )
+                          .toList(),
                 );
               },
             ),
+        ],
+      ),
     );
   }
 
@@ -604,38 +710,97 @@ class _SearchPageState extends State<SearchPage> {
           Expanded(
             child: ListView.separated(
               itemCount: _recentSearches.length,
-              separatorBuilder: (_, __) => const Divider(
-                height: 1,
-                thickness: 0.5,
-                color: Color(0xFFCAE9FF),
-              ),
+              separatorBuilder:
+                  (_, __) => const Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    color: Color(0xFFCAE9FF),
+                  ),
               itemBuilder: (context, index) {
-                final query = _recentSearches[index];
-                return ListTile(
-                  dense: true,
-                  title: Text(
-                    query,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 15,
-                      color: Color(0xFF6B7280),
-                    ),
+                final item = _recentSearches[index];
+                final query = item.query;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () {
+                            _searchController.text = query;
+                            _searchController
+                                .selection = TextSelection.fromPosition(
+                              TextPosition(
+                                offset: _searchController.text.length,
+                              ),
+                            );
+                            _handleSearchSubmit(query);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: const Color(0xFFEDF2F7),
+                                    ),
+                                  ),
+                                  child:
+                                      item.imageUrl == null
+                                          ? const Icon(
+                                            Icons.devices_other_rounded,
+                                            size: 20,
+                                            color: Color(0xFF9DB2CE),
+                                          )
+                                          : ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            child: Image.network(
+                                              _imgUrl(item.imageUrl!),
+                                              fit: BoxFit.contain,
+                                              errorBuilder:
+                                                  (_, __, ___) => const Icon(
+                                                    Icons.devices_other_rounded,
+                                                    size: 20,
+                                                    color: Color(0xFF9DB2CE),
+                                                  ),
+                                            ),
+                                          ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    query,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 15,
+                                      color: Color(0xFF6B7280),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => _removeRecentSearch(query),
+                        icon: const Icon(
+                          Icons.close,
+                          size: 18,
+                          color: Color(0xFF1B4965),
+                        ),
+                      ),
+                    ],
                   ),
-                  trailing: IconButton(
-                    onPressed: () => _removeRecentSearch(query),
-                    icon: const Icon(
-                      Icons.close,
-                      size: 18,
-                      color: Color(0xFF1B4965),
-                    ),
-                  ),
-                  onTap: () {
-                    _searchController.text = query;
-                    _searchController.selection = TextSelection.fromPosition(
-                      TextPosition(offset: _searchController.text.length),
-                    );
-                    _handleSearchSubmit(query);
-                  },
                 );
               },
             ),
@@ -657,5 +822,148 @@ class _SearchPageState extends State<SearchPage> {
         ],
       ),
     );
+  }
+}
+
+class _InlineRelatedProductCard extends StatelessWidget {
+  final ProductModel product;
+  final String Function(String url) imageUrlBuilder;
+  final VoidCallback onTap;
+
+  const _InlineRelatedProductCard({
+    required this.product,
+    required this.imageUrlBuilder,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasSale =
+        product.salePrice != null && product.salePrice! < product.regularPrice;
+    final double displayPrice =
+        hasSale ? product.salePrice! : product.regularPrice;
+    final String? imageUrl =
+        product.imageUrl ??
+        (product.images.isNotEmpty ? product.images.first : null);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFF2F2F2)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 95,
+              width: double.infinity,
+              child:
+                  imageUrl == null
+                      ? const Center(
+                        child: Icon(
+                          Icons.devices_other_rounded,
+                          color: Color(0xFFCAE9FF),
+                          size: 40,
+                        ),
+                      )
+                      : Image.network(
+                        imageUrlBuilder(imageUrl),
+                        fit: BoxFit.contain,
+                        errorBuilder:
+                            (_, __, ___) => const Center(
+                              child: Icon(
+                                Icons.devices_other_rounded,
+                                color: Color(0xFFCAE9FF),
+                                size: 40,
+                              ),
+                            ),
+                      ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              product.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF111827),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '\$${displayPrice.toStringAsFixed(0)}',
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Colors.black,
+              ),
+            ),
+            if (hasSale)
+              Text(
+                '\$${product.regularPrice.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 14,
+                  color: Color(0xFF757575),
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 38,
+              child: ElevatedButton(
+                onPressed: onTap,
+                style: ElevatedButton.styleFrom(
+                  elevation: 0,
+                  backgroundColor: const Color(0xFF1B4965),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text(
+                  'View Product',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentSearchItem {
+  final String query;
+  final String? imageUrl;
+
+  const _RecentSearchItem({required this.query, this.imageUrl});
+
+  factory _RecentSearchItem.fromJson(Map<String, dynamic> json) {
+    return _RecentSearchItem(
+      query: (json['query'] ?? '').toString(),
+      imageUrl:
+          (json['imageUrl'] ?? '').toString().trim().isEmpty
+              ? null
+              : json['imageUrl'].toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{'query': query, 'imageUrl': imageUrl};
   }
 }
