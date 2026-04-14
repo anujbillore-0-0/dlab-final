@@ -6,12 +6,14 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import '../../../../core/services/banner_config_service.dart';
 import '../../../../core/services/cart_service.dart';
 import '../../../../core/services/wishlist_service.dart';
 import '../../../notifications/presentation/screens/notifications_page.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../wishlist/presentation/screens/wishlist_page.dart';
 import 'checkout_screen.dart';
+import 'coupon_page.dart';
 import 'product_details_page.dart';
 import 'search_page.dart';
 import 'search_results_page.dart';
@@ -303,6 +305,8 @@ class _HomePageState extends State<HomePage> {
   static const int _pageSize = 10;
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
+  String? _voiceOverlayMessage;
+  Timer? _voiceOverlayTimer;
 
   @override
   void initState() {
@@ -316,6 +320,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _speechToText.stop();
+    _voiceOverlayTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -327,16 +332,67 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: Colors.white,
       body: SafeArea(
         bottom: false,
-        child: CustomScrollView(
-          controller: _scrollController,
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            _buildSliverHeader(),
-            _buildStickySearch(),
-            SliverToBoxAdapter(child: _buildBody()),
-            SliverToBoxAdapter(child: _buildTrustBadges()),
-            _buildInfiniteProductsGrid(),
-            SliverToBoxAdapter(child: _buildInfiniteFooter()),
+        child: Stack(
+          children: [
+            CustomScrollView(
+              controller: _scrollController,
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                _buildSliverHeader(),
+                _buildStickySearch(),
+                SliverToBoxAdapter(child: _buildBody()),
+                SliverToBoxAdapter(child: _buildTrustBadges()),
+                _buildInfiniteProductsGrid(),
+                SliverToBoxAdapter(child: _buildInfiniteFooter()),
+              ],
+            ),
+            if (_voiceOverlayMessage != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 28),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xF21B4965),
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x2A000000),
+                            blurRadius: 14,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isListening ? Icons.mic_rounded : Icons.info_outline,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              _voiceOverlayMessage!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -463,7 +519,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _triggerVoiceSearch() async {
-    _showVoiceMessage('Initializing voice search...');
+    _showVoiceOverlay('Initializing voice search...');
 
     if (_isListening) {
       await _speechToText.stop();
@@ -473,7 +529,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _isListening = false;
       });
-      _showVoiceMessage('Stopped listening.');
+      _hideVoiceOverlay();
       return;
     }
 
@@ -486,6 +542,7 @@ class _HomePageState extends State<HomePage> {
           setState(() {
             _isListening = false;
           });
+          _hideVoiceOverlay();
         }
       },
       onError: (error) {
@@ -495,7 +552,7 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           _isListening = false;
         });
-        _showVoiceMessage('Voice error: ${error.errorMsg}');
+        _showVoiceOverlay('Voice error: ${error.errorMsg}');
       },
     );
 
@@ -503,7 +560,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) {
         return;
       }
-      _showVoiceMessage(
+      _showVoiceOverlay(
         'Voice recognition unavailable. Allow mic permission in Chrome site settings.',
       );
       return;
@@ -516,7 +573,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _isListening = true;
     });
-    _showVoiceMessage('Listening... Speak now.');
+    _showVoiceOverlay('Listening... Speak now.', persistent: true);
 
     await _speechToText.listen(
       listenMode: stt.ListenMode.search,
@@ -532,7 +589,7 @@ class _HomePageState extends State<HomePage> {
           setState(() {
             _isListening = false;
           });
-          _showVoiceMessage('Searching for "$recognizedText"');
+          _showVoiceOverlay('Searching for "$recognizedText"');
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => SearchResultsPage(query: recognizedText),
@@ -547,18 +604,32 @@ class _HomePageState extends State<HomePage> {
     _triggerVoiceSearch();
   }
 
-  void _showVoiceMessage(String message) {
+  void _showVoiceOverlay(String message, {bool persistent = false}) {
     if (!mounted) {
       return;
     }
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) {
-      debugPrint('Voice message: $message');
+    _voiceOverlayTimer?.cancel();
+    setState(() {
+      _voiceOverlayMessage = message;
+    });
+    if (!persistent) {
+      _voiceOverlayTimer = Timer(const Duration(seconds: 2), () {
+        if (!mounted || _isListening) return;
+        setState(() {
+          _voiceOverlayMessage = null;
+        });
+      });
+    }
+  }
+
+  void _hideVoiceOverlay() {
+    _voiceOverlayTimer?.cancel();
+    if (!mounted) {
       return;
     }
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    setState(() {
+      _voiceOverlayMessage = null;
+    });
   }
 
   Widget _buildTrustBadges() {
@@ -899,52 +970,83 @@ class ProductModel {
   final String name;
   final List<String> images;
   final String? imageUrl; // first image — kept for backward compat
+  final DateTime? createdAt;
   final double? salePrice;
   final double regularPrice;
   final int? categoryId;
   final String? shortDescription;
   final String? description;
   final bool isVariable;
+  final String? weight;
   final String? length;
   final String? width;
   final String? height;
+  final List<String> quickTypes;
 
   const ProductModel({
     required this.id,
     required this.name,
     this.images = const [],
     this.imageUrl,
+    this.createdAt,
     this.salePrice,
     required this.regularPrice,
     this.categoryId,
     this.shortDescription,
     this.description,
     this.isVariable = false,
+    this.weight,
     this.length,
     this.width,
     this.height,
+    this.quickTypes = const [],
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
+    String? readText(List<String> keys) {
+      for (final key in keys) {
+        final value = json[key];
+        if (value == null) continue;
+        final text = value.toString().trim();
+        if (text.isNotEmpty) return text;
+      }
+      return null;
+    }
+
     final imgRaw = json['images'];
     final imgs =
         imgRaw is List ? imgRaw.whereType<String>().toList() : <String>[];
+    final rawTypes = json['type'];
+    final quickTypes =
+      rawTypes is String
+        ? rawTypes
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toList()
+        : <String>[];
     return ProductModel(
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       images: imgs,
       imageUrl: imgs.isNotEmpty ? imgs[0] : null,
+      createdAt: DateTime.tryParse((json['created_at'] as String?) ?? ''),
       salePrice: (json['sale_price'] as num?)?.toDouble(),
       regularPrice: (json['regular_price'] as num?)?.toDouble() ?? 0,
       categoryId: json['category_id'] as int?,
       shortDescription: json['short_description'] as String?,
       description: json['description'] as String?,
       isVariable: json['is_variable'] as bool? ?? false,
-      length: json['Length'] as String?,
-      width: json['Width'] as String?,
-      height: json['Height'] as String?,
+      weight: readText(['weight', 'Weight']),
+      length: readText(['length', 'Length']),
+      width: readText(['width', 'Width']),
+      height: readText(['height', 'Height']),
+      quickTypes: quickTypes,
     );
   }
+
+  bool hasQuickType(String typeKey) =>
+      quickTypes.contains(typeKey.trim().toLowerCase());
 }
 
 // ─────────────────────────────────────────────
@@ -957,6 +1059,9 @@ class ProductService {
       '.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6cWVpYnh3YXNpa2RtZG9pamZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5OTQwMTAsImV4cCI6MjA4NzU3MDAxMH0'
       '.guvKAPuNIw8Ln5m-r6i99eGu2tOjuHvNArYfh9Q2Prk';
 
+  static DateTime? _maxPriceFetchedAt;
+  static double? _cachedMaxPrice;
+
   static Map<String, String> get _h => {
     'apikey': _key,
     'Authorization': 'Bearer $_key',
@@ -967,10 +1072,11 @@ class ProductService {
     int offset = 0,
     bool saleOnly = false,
     int? categoryId,
+    String? quickType,
   }) async {
     final buf = StringBuffer(
       '$_url/rest/v1/products'
-      '?select=id,name,images,sale_price,regular_price,category_id,short_description,description,is_variable'
+      '?select=id,name,images,created_at,sale_price,regular_price,category_id,short_description,description,is_variable,weight,length,width,height,type'
       '&is_active=eq.true'
       '&order=id.desc'
       '&limit=$limit'
@@ -978,6 +1084,10 @@ class ProductService {
     );
     if (saleOnly) buf.write('&sale_price=not.is.null');
     if (categoryId != null) buf.write('&category_id=eq.$categoryId');
+    if (quickType != null && quickType.trim().isNotEmpty) {
+      final tag = Uri.encodeQueryComponent(quickType.trim().toLowerCase());
+      buf.write('&type=ilike.*$tag*');
+    }
     try {
       final r = await http.get(Uri.parse(buf.toString()), headers: _h);
       if (r.statusCode != 200) return [];
@@ -1030,8 +1140,8 @@ class ProductService {
       final r = await http.get(
         Uri.parse(
           '$_url/rest/v1/products'
-          '?select=id,name,images,sale_price,regular_price,category_id,'
-          'short_description,description,is_variable,Length,Width,Height'
+          '?select=id,name,images,created_at,sale_price,regular_price,category_id,'
+          'short_description,description,is_variable,weight,length,width,height,type'
           '&id=eq.$id'
           '&is_active=eq.true'
           '&limit=1',
@@ -1045,6 +1155,50 @@ class ProductService {
     } catch (_) {
       return null;
     }
+  }
+
+  static Future<double> fetchMaxProductPrice({
+    Duration ttl = const Duration(minutes: 15),
+  }) async {
+    final now = DateTime.now();
+    if (_cachedMaxPrice != null && _maxPriceFetchedAt != null) {
+      final age = now.difference(_maxPriceFetchedAt!);
+      if (age <= ttl) {
+        return _cachedMaxPrice!;
+      }
+    }
+
+    try {
+      final r = await http.get(
+        Uri.parse(
+          '$_url/rest/v1/products'
+          '?select=regular_price'
+          '&is_active=eq.true'
+          '&regular_price=not.is.null'
+          '&order=regular_price.desc'
+          '&limit=1',
+        ),
+        headers: _h,
+      );
+
+      if (r.statusCode == 200) {
+        final list = jsonDecode(r.body) as List;
+        if (list.isNotEmpty) {
+          final value = (list.first as Map<String, dynamic>)['regular_price'];
+          final parsed = (value as num?)?.toDouble();
+          if (parsed != null && parsed > 0) {
+            _cachedMaxPrice = parsed;
+            _maxPriceFetchedAt = now;
+            return parsed;
+          }
+        }
+      }
+    } catch (_) {}
+
+    final fallback = _cachedMaxPrice ?? 1500.0;
+    _cachedMaxPrice = fallback;
+    _maxPriceFetchedAt = now;
+    return fallback;
   }
 }
 
@@ -1449,21 +1603,54 @@ class _BannerSliderState extends State<BannerSlider> {
   int _currentPage = 0;
   Timer? _timer;
 
-  final List<String> _banners = [
+  static const List<String> _defaultBanners = [
     'assets/images/banners/banner1.png',
     'assets/images/banners/banner2.png',
     'assets/images/banners/banner1.png',
   ];
 
+  List<String> _banners = List<String>.from(_defaultBanners);
+
+  void _openHotDealsBannerPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder:
+            (_) => const QuickTypeProductsPage(
+              title: 'Hot Deals',
+              typeKey: 'banner',
+            ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     _startAutoSlide();
+    _loadBanners();
+  }
+
+  Future<void> _loadBanners() async {
+    final urls = await BannerConfigService.instance.getBannerUrls('banners');
+    if (!mounted) return;
+
+    if (urls != null && urls.isNotEmpty) {
+      setState(() {
+        _banners = urls.take(3).toList();
+        _currentPage = 0;
+      });
+      return;
+    }
+
+    setState(() {
+      _banners = List<String>.from(_defaultBanners);
+      _currentPage = 0;
+    });
   }
 
   void _startAutoSlide() {
     _timer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (_pageController.hasClients) {
+      if (_pageController.hasClients && _banners.isNotEmpty) {
         final next = (_currentPage + 1) % _banners.length;
         _pageController.animateToPage(
           next,
@@ -1499,6 +1686,7 @@ class _BannerSliderState extends State<BannerSlider> {
                 itemBuilder:
                     (ctx, i) => _buildBannerCard(
                       _banners[i],
+                      _defaultBanners[i % _defaultBanners.length],
                       bannerWidth,
                       bannerHeight,
                     ),
@@ -1528,16 +1716,35 @@ class _BannerSliderState extends State<BannerSlider> {
     );
   }
 
-  Widget _buildBannerCard(String imagePath, double w, double h) {
+  Widget _buildBannerCard(
+    String imagePath,
+    String fallbackAsset,
+    double w,
+    double h,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Center(
         child: SizedBox(
           width: w,
           height: h,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Image.asset(imagePath, fit: BoxFit.cover),
+          child: GestureDetector(
+            onTap: _openHotDealsBannerPage,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child:
+                  imagePath.startsWith('http://') || imagePath.startsWith('https://')
+                      ? Image.network(
+                        imagePath,
+                        fit: BoxFit.cover,
+                        errorBuilder:
+                            (_, __, ___) => Image.asset(
+                              fallbackAsset,
+                              fit: BoxFit.cover,
+                            ),
+                      )
+                      : Image.asset(imagePath, fit: BoxFit.cover),
+            ),
           ),
         ),
       ),
@@ -1548,20 +1755,65 @@ class _BannerSliderState extends State<BannerSlider> {
 // ─────────────────────────────────────────────
 // PROMO BANNER
 // ─────────────────────────────────────────────
-class PromoBanner extends StatelessWidget {
+class PromoBanner extends StatefulWidget {
   const PromoBanner({super.key});
+
+  @override
+  State<PromoBanner> createState() => _PromoBannerState();
+}
+
+class _PromoBannerState extends State<PromoBanner> {
+  static const String _fallbackAsset = 'assets/images/promo/banner.png';
+  String? _imageUrl;
+
+  void _openHotDealsBannerPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder:
+            (_) => const QuickTypeProductsPage(
+              title: 'Hot Deals',
+              typeKey: 'banner',
+            ),
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBanner();
+  }
+
+  Future<void> _loadBanner() async {
+    final urls = await BannerConfigService.instance.getBannerUrls('promo1');
+    if (!mounted) return;
+    setState(() {
+      _imageUrl = (urls != null && urls.isNotEmpty) ? urls.first : null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: AspectRatio(
-          aspectRatio: 390 / 134,
-          child: Image.asset(
-            'assets/images/promo/banner.png',
-            fit: BoxFit.contain,
+      child: GestureDetector(
+        onTap: _openHotDealsBannerPage,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: AspectRatio(
+            aspectRatio: 390 / 134,
+            child:
+                _imageUrl == null
+                    ? Image.asset(_fallbackAsset, fit: BoxFit.contain)
+                    : Image.network(
+                        _imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder:
+                            (_, __, ___) => Image.asset(
+                              _fallbackAsset,
+                              fit: BoxFit.contain,
+                            ),
+                      ),
           ),
         ),
       ),
@@ -1578,21 +1830,25 @@ class QuickLinksRow extends StatelessWidget {
   static const _items = [
     {
       'label': 'Deals',
+      'type': 'deals',
       'asset': 'assets/icons/quick_actions/sale.png',
       'bg': Color(0xFFFFE7DA),
     },
     {
       'label': 'Free Shipping',
+      'type': 'freeship',
       'asset': 'assets/icons/quick_actions/free.png',
       'bg': Color(0xFFE6F9ED),
     },
     {
       'label': 'Under ₹999',
+      'type': 'underthis',
       'asset': 'assets/icons/quick_actions/gift.png',
       'bg': Color(0xFFE9F2FE),
     },
     {
       'label': 'New',
+      'type': 'new',
       'asset': 'assets/icons/quick_actions/new.png',
       'bg': Color(0xFFF3EEFF),
     },
@@ -1613,6 +1869,17 @@ class QuickLinksRow extends StatelessWidget {
                       label: item['label'] as String,
                       assetPath: item['asset'] as String,
                       bgColor: item['bg'] as Color,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder:
+                                (_) => QuickTypeProductsPage(
+                                  title: item['label'] as String,
+                                  typeKey: item['type'] as String,
+                                ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 )
@@ -1626,11 +1893,13 @@ class _QuickLinkItem extends StatelessWidget {
   final String label;
   final String assetPath;
   final Color bgColor;
+  final VoidCallback onTap;
 
   const _QuickLinkItem({
     required this.label,
     required this.assetPath,
     required this.bgColor,
+    required this.onTap,
   });
 
   @override
@@ -1640,7 +1909,7 @@ class _QuickLinkItem extends StatelessWidget {
       68.0,
     );
     return GestureDetector(
-      onTap: () {},
+      onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1674,6 +1943,254 @@ class _QuickLinkItem extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class QuickTypeProductsPage extends StatefulWidget {
+  final String title;
+  final String typeKey;
+
+  const QuickTypeProductsPage({
+    super.key,
+    required this.title,
+    required this.typeKey,
+  });
+
+  @override
+  State<QuickTypeProductsPage> createState() => _QuickTypeProductsPageState();
+}
+
+class _QuickTypeProductsPageState extends State<QuickTypeProductsPage> {
+  final ScrollController _scrollController = ScrollController();
+  final List<ProductModel> _products = [];
+
+  bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  int _offset = 0;
+  static const int _pageSize = 12;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _loadMore();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    final threshold = _scrollController.position.maxScrollExtent - 300;
+    if (_scrollController.position.pixels >= threshold) _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+
+    final fetched = await ProductService.fetchProducts(
+      limit: _pageSize,
+      offset: _offset,
+      quickType: widget.typeKey,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _products.addAll(fetched);
+      _offset += fetched.length;
+      _isLoadingMore = false;
+      _isInitialLoading = false;
+      if (fetched.length < _pageSize) _hasMore = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        title: Text(
+          widget.title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ),
+      body:
+          _isInitialLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _products.isEmpty
+              ? const Center(
+                child: Text(
+                  'No products found',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              )
+              : CustomScrollView(
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                      child: _ProductGrid(products: _products),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child:
+                          _isLoadingMore
+                              ? const Center(child: CircularProgressIndicator())
+                              : const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ),
+    );
+  }
+}
+
+class HomeSeeAllProductsPage extends StatefulWidget {
+  final String title;
+  final int seed;
+
+  const HomeSeeAllProductsPage({
+    super.key,
+    required this.title,
+    required this.seed,
+  });
+
+  @override
+  State<HomeSeeAllProductsPage> createState() => _HomeSeeAllProductsPageState();
+}
+
+class _HomeSeeAllProductsPageState extends State<HomeSeeAllProductsPage> {
+  final ScrollController _scrollController = ScrollController();
+  final List<ProductModel> _products = [];
+
+  bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  int _offset = 0;
+  static const int _pageSize = 12;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _offset = _randomBaseOffset();
+    _loadMore();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  int _randomBaseOffset() {
+    final nowBucket = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final mixed = (widget.seed * 37 + nowBucket) % 80;
+    return mixed < 0 ? 0 : mixed;
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoadingMore || !_hasMore) return;
+    final threshold = _scrollController.position.maxScrollExtent - 300;
+    if (_scrollController.position.pixels >= threshold) _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+
+    final fetched = await ProductService.fetchProducts(
+      limit: _pageSize,
+      offset: _offset,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _products.addAll(fetched);
+      _offset += fetched.length;
+      _isLoadingMore = false;
+      _isInitialLoading = false;
+      if (fetched.length < _pageSize) _hasMore = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        title: Text(
+          widget.title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ),
+      body:
+          _isInitialLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _products.isEmpty
+              ? const Center(
+                child: Text(
+                  'No products found',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              )
+              : CustomScrollView(
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                      child: _ProductGrid(products: _products),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child:
+                          _isLoadingMore
+                              ? const Center(child: CircularProgressIndicator())
+                              : const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ),
     );
   }
 }
@@ -1886,6 +2403,18 @@ class ProductSection extends StatefulWidget {
 class _ProductSectionState extends State<ProductSection> {
   late final Future<List<ProductModel>> _future;
 
+  void _openSeeAllPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder:
+            (_) => HomeSeeAllProductsPage(
+              title: widget.title,
+              seed: widget.title.hashCode,
+            ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1930,7 +2459,7 @@ class _ProductSectionState extends State<ProductSection> {
                   ),
                   if (widget.showSeeAll)
                     TextButton(
-                      onPressed: () {},
+                      onPressed: _openSeeAllPage,
                       style: TextButton.styleFrom(padding: EdgeInsets.zero),
                       child: const Text(
                         'See all',
@@ -2022,6 +2551,13 @@ class _ProductCard extends StatefulWidget {
 
 class _ProductCardState extends State<_ProductCard> {
   final WishlistService _wishlistService = WishlistService.instance;
+  final CartService _cartService = CartService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_cartService.initialize());
+  }
 
   String _fmt(double price) => '\$${price.toStringAsFixed(0)}';
 
@@ -2257,71 +2793,144 @@ class _ProductCardState extends State<_ProductCard> {
               ),
             ),
             const SizedBox(height: 8),
-            GestureDetector(
-              onTap: () async {
-                await CartService.instance.addOrIncrement(
-                  CartProduct(
-                    id: widget.product.id,
-                    name: widget.product.name,
-                    images: widget.product.images,
-                    imageUrl:
-                        widget.product.images.isNotEmpty
-                            ? widget.product.images.first
-                            : widget.product.imageUrl,
-                    salePrice: widget.product.salePrice,
-                    regularPrice: widget.product.regularPrice,
-                    quantity: 1,
-                    addedAt: DateTime.now(),
-                  ),
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                height: 38,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [Color(0xFF1B4965), Color(0xFF2B729C)],
-                  ),
-                  borderRadius: BorderRadius.circular(9),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0xFFCAE9FF),
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.shopping_cart_outlined,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                          SizedBox(width: 5),
-                          Text(
-                            'Add to Cart',
-                            maxLines: 1,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
+            ValueListenableBuilder<Map<int, int>>(
+              valueListenable: _cartService.quantities,
+              builder: (context, quantities, _) {
+                final qty = quantities[widget.product.id] ?? 0;
+                if (qty <= 0) {
+                  return GestureDetector(
+                    onTap: () async {
+                      await _cartService.addOrIncrement(
+                        CartProduct(
+                          id: widget.product.id,
+                          name: widget.product.name,
+                          images: widget.product.images,
+                          imageUrl:
+                              widget.product.images.isNotEmpty
+                                  ? widget.product.images.first
+                                  : widget.product.imageUrl,
+                          salePrice: widget.product.salePrice,
+                          regularPrice: widget.product.regularPrice,
+                          quantity: 1,
+                          addedAt: DateTime.now(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [Color(0xFF1B4965), Color(0xFF2B729C)],
+                        ),
+                        borderRadius: BorderRadius.circular(9),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0xFFCAE9FF),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
                           ),
                         ],
                       ),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.shopping_cart_outlined,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 5),
+                                Text(
+                                  'Add to Cart',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
+                  );
+                }
+
+                return Container(
+                  width: double.infinity,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1B4965),
+                    borderRadius: BorderRadius.circular(9),
                   ),
-                ),
-              ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () async {
+                          if (qty <= 1) {
+                            await _cartService.remove(widget.product.id);
+                          } else {
+                            await _cartService.setQuantity(widget.product.id, qty - 1);
+                          }
+                        },
+                        icon: const Icon(
+                          Icons.remove,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        splashRadius: 18,
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            '$qty',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () async {
+                          await _cartService.addOrIncrement(
+                            CartProduct(
+                              id: widget.product.id,
+                              name: widget.product.name,
+                              images: widget.product.images,
+                              imageUrl:
+                                  widget.product.images.isNotEmpty
+                                      ? widget.product.images.first
+                                      : widget.product.imageUrl,
+                              salePrice: widget.product.salePrice,
+                              regularPrice: widget.product.regularPrice,
+                              quantity: 1,
+                              addedAt: DateTime.now(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.add,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        splashRadius: 18,
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -2384,7 +2993,16 @@ class _TrendingSectionState extends State<TrendingSection> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () {},
+                    onPressed:
+                        () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder:
+                                (_) => const HomeSeeAllProductsPage(
+                                  title: 'Trending in your Area',
+                                  seed: 2047,
+                                ),
+                          ),
+                        ),
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
                     child: const Text(
                       'See all',
@@ -2416,18 +3034,66 @@ class _TrendingSectionState extends State<TrendingSection> {
 // ─────────────────────────────────────────────
 // AD BANNER
 // ─────────────────────────────────────────────
-class AdBanner extends StatelessWidget {
+class AdBanner extends StatefulWidget {
   const AdBanner({super.key});
+
+  @override
+  State<AdBanner> createState() => _AdBannerState();
+}
+
+class _AdBannerState extends State<AdBanner> {
+  static const String _fallbackAsset = 'assets/promo.png';
+  String? _imageUrl;
+
+  void _openHotDealsBannerPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder:
+            (_) => const QuickTypeProductsPage(
+              title: 'Hot Deals',
+              typeKey: 'banner',
+            ),
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBanner();
+  }
+
+  Future<void> _loadBanner() async {
+    final urls = await BannerConfigService.instance.getBannerUrls('promo2');
+    if (!mounted) return;
+    setState(() {
+      _imageUrl = (urls != null && urls.isNotEmpty) ? urls.first : null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: AspectRatio(
-          aspectRatio: 388 / 142,
-          child: Image.asset('assets/promo.png', fit: BoxFit.contain),
+      child: GestureDetector(
+        onTap: _openHotDealsBannerPage,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: AspectRatio(
+            aspectRatio: 388 / 142,
+            child:
+                _imageUrl == null
+                    ? Image.asset(_fallbackAsset, fit: BoxFit.contain)
+                    : Image.network(
+                        _imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder:
+                            (_, __, ___) => Image.asset(
+                              _fallbackAsset,
+                              fit: BoxFit.contain,
+                            ),
+                      ),
+          ),
         ),
       ),
     );
@@ -2437,8 +3103,52 @@ class AdBanner extends StatelessWidget {
 // ─────────────────────────────────────────────
 // DEALS AND OFFERS SECTION
 // ─────────────────────────────────────────────
-class ResponsiveDealsSection extends StatelessWidget {
+class ResponsiveDealsSection extends StatefulWidget {
   const ResponsiveDealsSection({super.key});
+
+  @override
+  State<ResponsiveDealsSection> createState() => _ResponsiveDealsSectionState();
+}
+
+class _ResponsiveDealsSectionState extends State<ResponsiveDealsSection> {
+  static const List<String> _fallbackImages = [
+    'assets/offertwo.png',
+    'assets/offerone.png',
+  ];
+
+  List<String> _images = List<String>.from(_fallbackImages);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDealsImages();
+  }
+
+  Future<void> _loadDealsImages() async {
+    final urls = await BannerConfigService.instance.getBannerUrls('deals');
+    if (!mounted) return;
+    if (urls != null && urls.length >= 2) {
+      setState(() {
+        _images = [urls[0], urls[1]];
+      });
+      return;
+    }
+    setState(() {
+      _images = List<String>.from(_fallbackImages);
+    });
+  }
+
+  void _openDealsPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder:
+            (_) => const QuickTypeProductsPage(
+              title: 'Deals',
+              typeKey: 'deals',
+            ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2460,7 +3170,7 @@ class ResponsiveDealsSection extends StatelessWidget {
                 ),
               ),
               GestureDetector(
-                onTap: () {},
+                onTap: _openDealsPage,
                 child: const Text(
                   'See all',
                   style: TextStyle(
@@ -2477,22 +3187,26 @@ class ResponsiveDealsSection extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Row(
-            children: const [
+            children: [
               Expanded(
                 child: DealCard(
                   title: 'Electronics',
                   subtitle: 'Up to 40% off',
                   borderColor: Color(0xFF0095FF),
-                  imagePath: 'assets/offertwo.png',
+                  imagePath: _images[0],
+                  fallbackAsset: _fallbackImages[0],
+                  onTap: _openDealsPage,
                 ),
               ),
-              SizedBox(width: 20),
+              const SizedBox(width: 20),
               Expanded(
                 child: DealCard(
                   title: 'Home Lab',
                   subtitle: 'Up to 40% off',
                   borderColor: Color(0xFFFF5500),
-                  imagePath: 'assets/offerone.png',
+                  imagePath: _images[1],
+                  fallbackAsset: _fallbackImages[1],
+                  onTap: _openDealsPage,
                 ),
               ),
             ],
@@ -2508,6 +3222,8 @@ class DealCard extends StatelessWidget {
   final String subtitle;
   final Color borderColor;
   final String imagePath;
+  final String fallbackAsset;
+  final VoidCallback onTap;
 
   const DealCard({
     super.key,
@@ -2515,22 +3231,40 @@ class DealCard extends StatelessWidget {
     required this.subtitle,
     required this.borderColor,
     required this.imagePath,
+    required this.fallbackAsset,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 184 / 190,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: borderColor, width: 1),
-          image: DecorationImage(
-            image: AssetImage(imagePath),
-            fit: BoxFit.cover,
+    final isNetwork =
+        imagePath.startsWith('http://') || imagePath.startsWith('https://');
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AspectRatio(
+        aspectRatio: 184 / 190,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor, width: 1),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child:
+                isNetwork
+                    ? Image.network(
+                      imagePath,
+                      fit: BoxFit.cover,
+                      errorBuilder:
+                          (_, __, ___) => Image.asset(
+                            fallbackAsset,
+                            fit: BoxFit.cover,
+                          ),
+                    )
+                    : Image.asset(imagePath, fit: BoxFit.cover),
           ),
         ),
-        child: const SizedBox.expand(),
       ),
     );
   }
@@ -3465,6 +4199,8 @@ class _CartPageState extends State<CartPage> {
   List<CartProduct> _savedItems = <CartProduct>[];
   List<ProductModel> _recommendations = <ProductModel>[];
   Set<int> _selectedItemIds = <int>{};
+  String? _appliedCouponCode;
+  int _appliedCouponPercent = 0;
 
   bool _loading = true;
 
@@ -3581,6 +4317,29 @@ class _CartPageState extends State<CartPage> {
     await _loadData();
   }
 
+  Future<void> _openCouponPage() async {
+    final result = await Navigator.of(context).push<AppliedCouponResult>(
+      MaterialPageRoute(builder: (_) => const CouponPage()),
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    setState(() {
+      _appliedCouponCode = result.code;
+      _appliedCouponPercent = result.discountPercentage.clamp(0, 100);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Applied ${result.code} (${result.discountPercentage}% off)',
+        ),
+      ),
+    );
+  }
+
   double get _selectedItemTotal {
     return _cartItems
         .where((item) => _selectedItemIds.contains(item.id))
@@ -3603,7 +4362,20 @@ class _CartPageState extends State<CartPage> {
         );
   }
 
-  double get _grandTotal => _selectedItemTotal - _selectedDiscount;
+  double get _netAmountBeforeCoupon => (_selectedItemTotal - _selectedDiscount)
+      .clamp(0, double.infinity);
+
+  double get _couponDiscount {
+    if (_appliedCouponPercent <= 0) {
+      return 0;
+    }
+    return (_netAmountBeforeCoupon * _appliedCouponPercent / 100)
+        .clamp(0, _netAmountBeforeCoupon);
+  }
+
+  double get _totalDiscount => _selectedDiscount + _couponDiscount;
+
+  double get _grandTotal => _netAmountBeforeCoupon - _couponDiscount;
 
   String _price(double value) => '₹${value.toStringAsFixed(0)}';
 
@@ -3657,7 +4429,7 @@ class _CartPageState extends State<CartPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: _CartOrderSummaryCard(
                     itemTotal: _selectedItemTotal,
-                    discount: _selectedDiscount,
+                    discount: _totalDiscount,
                     grandTotal: _grandTotal,
                     onCheckout: () {
                       Navigator.of(context).push(
@@ -3746,10 +4518,24 @@ class _CartPageState extends State<CartPage> {
                   },
                 ),
                 const SizedBox(height: 16),
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(horizontal: 20),
-                  child: _CartOffersBanner(),
+                  child: _CartOffersBanner(
+                    onTap: _openCouponPage,
+                  ),
                 ),
+                if (_appliedCouponCode != null && _appliedCouponPercent > 0)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                    child: Text(
+                      'Coupon $_appliedCouponCode applied ($_appliedCouponPercent% off on net amount)',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1B4965),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 if (_savedItems.isNotEmpty) ...[
                   const SizedBox(height: 24),
                   Padding(
@@ -3813,6 +4599,7 @@ class _CartPageState extends State<CartPage> {
                               product: product,
                               imageUrlBuilder: _imgUrl,
                               onAddToCart: () => _addRecommendation(product),
+                              onCartUpdated: _loadData,
                             );
                           },
                         ),
@@ -4254,45 +5041,51 @@ class _SavedForLaterCard extends StatelessWidget {
 }
 
 class _CartOffersBanner extends StatelessWidget {
-  const _CartOffersBanner();
+  const _CartOffersBanner({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: const Color.fromRGBO(139, 237, 160, 0.2),
-        border: Border.all(color: const Color(0xFF26A541)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 10,
-          ),
-        ],
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'Save Extra With Offers',
-            style: TextStyle(fontSize: 14, color: Color(0xFF111827)),
-          ),
-          Row(
-            children: [
-              Text(
-                'See Offers',
-                style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-              ),
-              SizedBox(width: 4),
-              Icon(
-                Icons.keyboard_arrow_right,
-                size: 16,
-                color: Color(0xFF6B7280),
-              ),
-            ],
-          ),
-        ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color.fromRGBO(139, 237, 160, 0.2),
+          border: Border.all(color: const Color(0xFF26A541)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+            ),
+          ],
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Save Extra With Offers',
+              style: TextStyle(fontSize: 14, color: Color(0xFF111827)),
+            ),
+            Row(
+              children: [
+                Text(
+                  'See Offers',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                ),
+                SizedBox(width: 4),
+                Icon(
+                  Icons.keyboard_arrow_right,
+                  size: 16,
+                  color: Color(0xFF6B7280),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4302,11 +5095,14 @@ class _CartRecommendationCard extends StatelessWidget {
   final ProductModel product;
   final String Function(String) imageUrlBuilder;
   final VoidCallback onAddToCart;
+  final VoidCallback? onCartUpdated;
+  final CartService _cartService = CartService.instance;
 
-  const _CartRecommendationCard({
+  _CartRecommendationCard({
     required this.product,
     required this.imageUrlBuilder,
     required this.onAddToCart,
+    this.onCartUpdated,
   });
 
   String _price(double value) => '₹${value.toStringAsFixed(0)}';
@@ -4421,22 +5217,72 @@ class _CartRecommendationCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 36,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1B4965),
-                shape: RoundedRectangleBorder(
+          ValueListenableBuilder<Map<int, int>>(
+            valueListenable: _cartService.quantities,
+            builder: (context, quantities, _) {
+              final qty = quantities[product.id] ?? 0;
+              if (qty <= 0) {
+                return SizedBox(
+                  width: double.infinity,
+                  height: 36,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1B4965),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: onAddToCart,
+                    child: const Text(
+                      'Add to Cart',
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                );
+              }
+
+              return Container(
+                width: double.infinity,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B4965),
                   borderRadius: BorderRadius.circular(10),
                 ),
-              ),
-              onPressed: onAddToCart,
-              child: const Text(
-                'Add to Cart',
-                style: TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () async {
+                        if (qty <= 1) {
+                          await _cartService.remove(product.id);
+                        } else {
+                          await _cartService.setQuantity(product.id, qty - 1);
+                        }
+                        onCartUpdated?.call();
+                      },
+                      icon: const Icon(Icons.remove, color: Colors.white, size: 16),
+                      splashRadius: 18,
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          '$qty',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: onAddToCart,
+                      icon: const Icon(Icons.add, color: Colors.white, size: 16),
+                      splashRadius: 18,
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),

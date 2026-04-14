@@ -64,6 +64,7 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   static const _addressesKey = 'checkout_addresses_v1';
+  static const _profileAddressesKey = 'profile_saved_addresses';
   static const _selectedAddressKey = 'checkout_selected_address_v1';
   static const _deliveryTypeKey = 'checkout_delivery_type_v1';
   static const _selectedPickupKey = 'checkout_selected_pickup_v1';
@@ -102,12 +103,63 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final delivery = rawDelivery == 'pickup' ? DeliveryType.pickup : DeliveryType.ship;
 
     final rawAddresses = prefs.getStringList(_addressesKey) ?? const <String>[];
-    var addresses =
+    final checkoutAddresses =
         rawAddresses
             .map((entry) => jsonDecode(entry) as Map<String, dynamic>)
             .map(CheckoutAddress.fromMap)
             .where((item) => item.name.trim().isNotEmpty)
             .toList();
+
+    final rawProfileAddresses =
+        prefs.getStringList(_profileAddressesKey) ?? const <String>[];
+    final profileAddresses = <CheckoutAddress>[];
+    for (var index = 0; index < rawProfileAddresses.length; index++) {
+      try {
+        final decoded = jsonDecode(rawProfileAddresses[index]);
+        if (decoded is! Map<String, dynamic>) continue;
+        final fullName = (decoded['full_name'] ?? '').toString().trim();
+        final phone = (decoded['phone'] ?? '').toString().trim();
+        final line1 = (decoded['address_line_1'] ?? '').toString().trim();
+        final line2 = (decoded['address_line_2'] ?? '').toString().trim();
+        final city = (decoded['city'] ?? '').toString().trim();
+        final state = (decoded['state'] ?? '').toString().trim();
+        final saveAs = (decoded['save_as'] ?? '').toString().trim();
+        final isDefault = decoded['is_default'] == true;
+
+        if (fullName.isEmpty || line1.isEmpty) continue;
+
+        final segments = <String>[line1];
+        if (line2.isNotEmpty) segments.add(line2);
+        final cityState = [city, state].where((s) => s.isNotEmpty).join(', ');
+        if (cityState.isNotEmpty) segments.add(cityState);
+
+        profileAddresses.add(
+          CheckoutAddress(
+            id: 'profile_${index + 1}',
+            name: fullName,
+            label: saveAs.isEmpty ? 'Home' : saveAs,
+            address: segments.join(', '),
+            phone: phone,
+          ),
+        );
+
+        if (isDefault) {
+          final last = profileAddresses.removeLast();
+          profileAddresses.insert(0, last);
+        }
+      } catch (_) {
+        // Ignore malformed entries from storage.
+      }
+    }
+
+    var addresses = <CheckoutAddress>[...profileAddresses, ...checkoutAddresses];
+    final seen = <String>{};
+    addresses =
+        addresses.where((item) {
+          final key =
+              '${item.name.toLowerCase()}|${item.address.toLowerCase()}|${item.phone.toLowerCase()}';
+          return seen.add(key);
+        }).toList();
 
     if (addresses.isEmpty) {
       addresses = const <CheckoutAddress>[

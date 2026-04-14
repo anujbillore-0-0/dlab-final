@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 
 import { authRouter }      from './routes/auth.js';
+import { couponsRouter } from './routes/coupons.js';
 import { imageProxyRouter } from './routes/imageProxy.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { errorHandler }    from './middleware/errorHandler.js';
@@ -56,6 +57,7 @@ app.get('/health/db', async (req, res) => {
 });
 
 app.use('/api/auth',         authRouter);
+app.use('/api/coupons',      couponsRouter);
 app.use('/api/image-proxy',  imageProxyRouter);
 app.use('/api/notifications', notificationsRouter);
 

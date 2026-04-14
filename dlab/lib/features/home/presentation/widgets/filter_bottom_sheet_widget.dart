@@ -24,6 +24,7 @@ class FilterBottomSheetWidget extends StatefulWidget {
     this.initialSelectedBrands,
     this.initialSelectedColor,
     this.initialPriceRange,
+    this.maxPrice = 1500,
   });
 
   final ValueChanged<Set<String>>? onApply;
@@ -32,6 +33,7 @@ class FilterBottomSheetWidget extends StatefulWidget {
   final Set<String>? initialSelectedBrands;
   final String? initialSelectedColor;
   final RangeValues? initialPriceRange;
+  final double maxPrice;
 
   static Future<void> show(
     BuildContext context, {
@@ -41,6 +43,7 @@ class FilterBottomSheetWidget extends StatefulWidget {
     Set<String>? initialSelectedBrands,
     String? initialSelectedColor,
     RangeValues? initialPriceRange,
+    double maxPrice = 1500,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -53,6 +56,7 @@ class FilterBottomSheetWidget extends StatefulWidget {
         initialSelectedBrands: initialSelectedBrands,
         initialSelectedColor: initialSelectedColor,
         initialPriceRange: initialPriceRange,
+        maxPrice: maxPrice,
       ),
     );
   }
@@ -109,9 +113,12 @@ class _FilterBottomSheetWidgetState extends State<FilterBottomSheetWidget> {
   bool _isColourExpanded = false;
   bool _isBrandExpanded = false;
 
+  late final double _priceUpperBound;
+
   @override
   void initState() {
     super.initState();
+    _priceUpperBound = widget.maxPrice > 0 ? widget.maxPrice : 1500;
     _selectedPopularFilters =
         widget.initialPopularFilters != null &&
             widget.initialPopularFilters!.isNotEmpty
@@ -119,7 +126,11 @@ class _FilterBottomSheetWidgetState extends State<FilterBottomSheetWidget> {
       : <String>{};
     selectedBrands = Set<String>.from(widget.initialSelectedBrands ?? <String>{});
     selectedColor = widget.initialSelectedColor ?? '';
-    currentPriceRange = widget.initialPriceRange ?? const RangeValues(0, 1500);
+    final initialRange = widget.initialPriceRange ?? RangeValues(0, _priceUpperBound);
+    currentPriceRange = RangeValues(
+      initialRange.start.clamp(0, _priceUpperBound),
+      initialRange.end.clamp(0, _priceUpperBound),
+    );
 
     _minPriceController = TextEditingController(
       text: currentPriceRange.start.toInt().toString(),
@@ -251,14 +262,15 @@ class _FilterBottomSheetWidgetState extends State<FilterBottomSheetWidget> {
                       iconAssetPath: 'assets/price.png',
                       isExpanded: _isPriceRangeExpanded,
                       actionLabel: (currentPriceRange.start > 0 ||
-                              currentPriceRange.end < 1500)
+                              currentPriceRange.end < _priceUpperBound)
                           ? 'Clear'
                           : null,
                       onActionTap: (currentPriceRange.start > 0 ||
-                              currentPriceRange.end < 1500)
+                              currentPriceRange.end < _priceUpperBound)
                           ? () {
                               setState(() {
-                                currentPriceRange = const RangeValues(0, 1500);
+                                currentPriceRange = RangeValues(0, _priceUpperBound);
+                                _syncPriceControllers();
                               });
                             }
                           : null,
@@ -417,7 +429,7 @@ class _FilterBottomSheetWidgetState extends State<FilterBottomSheetWidget> {
       count += 1;
     }
 
-    if (currentPriceRange.start > 0 || currentPriceRange.end < 1500) {
+    if (currentPriceRange.start > 0 || currentPriceRange.end < _priceUpperBound) {
       count += 1;
     }
 
@@ -437,7 +449,7 @@ class _FilterBottomSheetWidgetState extends State<FilterBottomSheetWidget> {
       _selectedPopularFilters.clear();
       selectedBrands.clear();
       selectedColor = '';
-      currentPriceRange = const RangeValues(0, 1500);
+      currentPriceRange = RangeValues(0, _priceUpperBound);
       _isPriceRangeExpanded = false;
       _isColourExpanded = false;
       _isBrandExpanded = false;
@@ -669,7 +681,7 @@ class _FilterBottomSheetWidgetState extends State<FilterBottomSheetWidget> {
           child: RangeSlider(
             values: currentPriceRange,
             min: 0,
-            max: 1500,
+            max: _priceUpperBound,
             onChanged: (RangeValues values) {
               setState(() {
                 currentPriceRange = RangeValues(
@@ -818,7 +830,7 @@ class _FilterBottomSheetWidgetState extends State<FilterBottomSheetWidget> {
   }
 
   int _clampPrice(int value) {
-    return value.clamp(0, 1500).toInt();
+    return value.clamp(0, _priceUpperBound).toInt();
   }
 
   void _syncPriceControllers() {

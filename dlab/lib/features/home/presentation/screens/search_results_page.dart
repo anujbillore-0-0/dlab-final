@@ -40,6 +40,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   static const Color _cardBorder = Color(0xFFF2F2F2);
 
   static const _imgProxyBase = 'http://app.dezign-lab.com:3000';
+  static const Duration _maxPriceRefreshInterval = Duration(minutes: 15);
 
   final TextEditingController _searchController = TextEditingController();
   final stt.SpeechToText _speechToText = stt.SpeechToText();
@@ -50,6 +51,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   final Set<String> _selectedPopularFilters = <String>{};
   final Set<String> _selectedBrands = <String>{};
   String _selectedColor = '';
+  double _maxDatabasePrice = 1500;
+  DateTime? _lastPriceMaxFetchedAt;
   RangeValues _currentPriceRange = const RangeValues(0, 1500);
   final Map<int, int> _cartQuantities = <int, int>{};
   final Map<int, List<VariantModel>> _variantCache = <int, List<VariantModel>>{};
@@ -285,6 +288,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       _isLoading = true;
     });
 
+    await _refreshMaxPriceFromDatabase();
+
     final allProducts = await ProductService.fetchProducts(limit: 120, offset: 0);
     final normalized = query.trim().toLowerCase();
 
@@ -342,6 +347,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       initialSelectedBrands: Set<String>.from(_selectedBrands),
       initialSelectedColor: _selectedColor,
       initialPriceRange: _currentPriceRange,
+      maxPrice: _maxDatabasePrice,
       onApplySelection: (selection) {
         setState(() {
           _selectedPopularFilters
@@ -353,7 +359,10 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
             ..addAll(selection.selectedBrands);
 
           _selectedColor = selection.selectedColor;
-          _currentPriceRange = selection.currentPriceRange;
+          _currentPriceRange = RangeValues(
+            selection.currentPriceRange.start.clamp(0, _maxDatabasePrice),
+            selection.currentPriceRange.end.clamp(0, _maxDatabasePrice),
+          );
           _syncAppliedFiltersChips();
         });
         _applyActiveFilters();
@@ -472,7 +481,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       } else if (filter == '$_colourChipPrefix$_selectedColor') {
         _selectedColor = '';
       } else if (filter.startsWith(_priceChipPrefix)) {
-        _currentPriceRange = const RangeValues(0, 1500);
+        _currentPriceRange = RangeValues(0, _maxDatabasePrice);
       }
 
       _syncAppliedFiltersChips();
@@ -500,8 +509,32 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       filtered = await _filterByVariantColor(filtered, normalizedColor);
     }
 
-    if (_selectedPopularFilters.isNotEmpty) {
-      filtered.shuffle(Random(DateTime.now().microsecondsSinceEpoch));
+    final bool newArrivalsSelected =
+        _selectedPopularFilters.contains('New Arrivals');
+    final bool onSaleSelected = _selectedPopularFilters.contains('On Sale');
+
+    if (onSaleSelected) {
+      filtered =
+          filtered.where((product) {
+            final sale = product.salePrice;
+            return sale != null && sale < product.regularPrice;
+          }).toList();
+
+      filtered.sort(
+        (a, b) => _discountAmount(b).compareTo(_discountAmount(a)),
+      );
+    } else if (newArrivalsSelected) {
+      filtered.sort((a, b) {
+        final DateTime? aDate = a.createdAt;
+        final DateTime? bDate = b.createdAt;
+
+        if (aDate != null && bDate != null) {
+          return bDate.compareTo(aDate);
+        }
+        if (aDate != null) return -1;
+        if (bDate != null) return 1;
+        return b.id.compareTo(a.id);
+      });
     } else {
       _sortProductsInPlace(filtered, _sortBy);
     }
@@ -580,11 +613,52 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
       _filters.add('$_colourChipPrefix$_selectedColor');
     }
 
-    if (_currentPriceRange.start > 0 || _currentPriceRange.end < 1500) {
+    if (_currentPriceRange.start > 0 || _currentPriceRange.end < _maxDatabasePrice) {
       _filters.add(
         '$_priceChipPrefix\$${_currentPriceRange.start.toInt()} - \$${_currentPriceRange.end.toInt()}',
       );
     }
+  }
+
+  Future<void> _refreshMaxPriceFromDatabase() async {
+    final now = DateTime.now();
+    if (_lastPriceMaxFetchedAt != null &&
+        now.difference(_lastPriceMaxFetchedAt!) < _maxPriceRefreshInterval) {
+      return;
+    }
+
+    final fetched = await ProductService.fetchMaxProductPrice(
+      ttl: _maxPriceRefreshInterval,
+    );
+    _lastPriceMaxFetchedAt = now;
+
+    if (!mounted) {
+      return;
+    }
+
+    if ((fetched - _maxDatabasePrice).abs() < 0.5) {
+      return;
+    }
+
+    setState(() {
+      _maxDatabasePrice = fetched;
+      _currentPriceRange = RangeValues(
+        _currentPriceRange.start.clamp(0, _maxDatabasePrice),
+        _currentPriceRange.end.clamp(0, _maxDatabasePrice),
+      );
+      if (_currentPriceRange.start > _currentPriceRange.end) {
+        _currentPriceRange = RangeValues(0, _maxDatabasePrice);
+      }
+      _syncAppliedFiltersChips();
+    });
+  }
+
+  double _discountAmount(ProductModel product) {
+    final sale = product.salePrice;
+    if (sale == null || sale >= product.regularPrice) {
+      return 0;
+    }
+    return product.regularPrice - sale;
   }
 
   void _onSelectBottomPage(int pageIndex) {

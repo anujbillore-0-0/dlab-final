@@ -76,6 +76,8 @@ class CartService {
   static final CartService instance = CartService._();
 
   final ValueNotifier<int> itemCount = ValueNotifier<int>(0);
+  final ValueNotifier<Map<int, int>> quantities =
+      ValueNotifier<Map<int, int>>(<int, int>{});
   final Map<int, CartProduct> _cache = <int, CartProduct>{};
   final Map<int, CartProduct> _savedCache = <int, CartProduct>{};
   bool _initialized = false;
@@ -218,5 +220,6 @@ class CartService {
   void _notifyCount() {
     final count = _cache.values.fold<int>(0, (sum, item) => sum + item.quantity);
     itemCount.value = count;
+    quantities.value = Map<int, int>.from(getQuantities());
   }
 }

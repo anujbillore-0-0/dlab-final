@@ -2,8 +2,10 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/services/banner_config_service.dart';
 import '../../../../core/services/cart_service.dart';
 import '../../../../core/services/wishlist_service.dart';
+import '../../../notifications/presentation/screens/notifications_page.dart';
 import 'dlabs_home_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,9 +48,6 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
   // ── Description expand ────────────────────────────────────────────────────
   bool _descExpanded = false;
 
-  // ── Specs expand ──────────────────────────────────────────────────────────
-  bool _specsExpanded = false;
-
   // ── Review UI state ───────────────────────────────────────────────────────
   String _activeReviewFilter = 'All';
   int _activeSortPage = 1;
@@ -67,6 +66,7 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
   bool _loadingMore = false;
   bool _hasMore = true;
   int _moreOffset = 20;
+  String? _promo2BannerUrl;
   String _deliveryCity = 'USA';
   String _deliveryCountry = 'United States';
   static const int _pageSize = 10;
@@ -94,7 +94,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
   String? _safeField(String key) {
     final p = _fullProduct ?? widget.product;
     String? v;
-    if (key == 'length')
+    if (key == 'weight')
+      v = p.weight;
+    else if (key == 'length')
       v = p.length;
     else if (key == 'width')
       v = p.width;
@@ -110,6 +112,7 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
     super.initState();
     _wishlistService.initialize();
     _cartService.initialize();
+    _loadPromo2Banner();
     _pageController = PageController();
     final rng = Random(widget.product.id);
     _fakeMrp = _displayPrice.round() + 200 + rng.nextInt(201);
@@ -179,6 +182,14 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
         });
       }
     }
+  }
+
+  Future<void> _loadPromo2Banner() async {
+    final urls = await BannerConfigService.instance.getBannerUrls('promo2');
+    if (!mounted) return;
+    setState(() {
+      _promo2BannerUrl = (urls != null && urls.isNotEmpty) ? urls.first : null;
+    });
   }
 
   Future<void> _addCurrentProductToCart() async {
@@ -335,7 +346,12 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
               color: _primary,
               size: 22,
             ),
-            onPressed: () {},
+            onPressed:
+                () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const NotificationsPage(),
+                  ),
+                ),
           ),
         ),
       ],
@@ -743,6 +759,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
         if (shortCleaned.isNotEmpty)
           Text(
             shortCleaned,
+            maxLines: _descExpanded ? null : 2,
+            overflow:
+                _descExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
             style: const TextStyle(
               fontFamily: 'Inter',
               color: Color(0xFF374151),
@@ -816,18 +835,15 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
 
   // ─────────────────────────────────────────────────────────────────────────
   // SPECS TABLE  ·  Frame 2169
-  //   Length / Width / Height rows with 0.5px #6B7280 dividers
-  //   "Details" footer row in #1B4965 with animated chevron
+  //   Weight / Length / Width / Height rows with 0.5px #6B7280 dividers
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildSpecsTable() {
-    final specs = <_SpecRow>[];
-    final length = _safeField('length');
-    final width = _safeField('width');
-    final height = _safeField('height');
-    if (length != null) specs.add(_SpecRow('Length', length));
-    if (width != null) specs.add(_SpecRow('Width', width));
-    if (height != null) specs.add(_SpecRow('Height', height));
-    if (specs.isEmpty) return const SizedBox.shrink();
+    final specs = <_SpecRow>[
+      _SpecRow('Weight', _safeField('weight') ?? '-'),
+      _SpecRow('Length', _safeField('length') ?? '-'),
+      _SpecRow('Width', _safeField('width') ?? '-'),
+      _SpecRow('Height', _safeField('height') ?? '-'),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -870,36 +886,6 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
                 color: Color(0xFF6B7280),
               ),
             ],
-          ),
-        ),
-        GestureDetector(
-          onTap: () => setState(() => _specsExpanded = !_specsExpanded),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Details',
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 16,
-                    color: _primary,
-                    height: 1.5,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-                AnimatedRotation(
-                  turns: _specsExpanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: _primary,
-                    size: 24,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -1557,15 +1543,54 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
   // AD BANNER  ·  CSS "AD22-11" — #FDCC3A, decorative circles, 388×142
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildAdBanner() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: double.infinity,
-        height: 142,
-        child: Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Container(color: const Color(0xFFFDCC3A)),
+    if (_promo2BannerUrl != null) {
+      return GestureDetector(
+        onTap:
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder:
+                    (_) => const QuickTypeProductsPage(
+                      title: 'Hot Deals',
+                      typeKey: 'banner',
+                    ),
+              ),
+            ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: double.infinity,
+            height: 142,
+            child: Image.network(
+              _promo2BannerUrl!,
+              fit: BoxFit.cover,
+              errorBuilder:
+                  (_, __, ___) => Image.asset('assets/promo.png', fit: BoxFit.contain),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap:
+          () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder:
+                  (_) => const QuickTypeProductsPage(
+                    title: 'Hot Deals',
+                    typeKey: 'banner',
+                  ),
+            ),
+          ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: double.infinity,
+          height: 142,
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Container(color: const Color(0xFFFDCC3A)),
             Positioned(
               right: -40,
               top: -44,
@@ -1699,7 +1724,8 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
                 ),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2538,64 +2564,127 @@ class _RelatedCard extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 10),
-            GestureDetector(
-              onTap: () async {
-                await _cartService.addOrIncrement(
-                  CartProduct(
-                    id: product.id,
-                    name: product.name,
-                    images: product.images,
-                    imageUrl:
-                        product.images.isNotEmpty
-                            ? product.images.first
-                            : product.imageUrl,
-                    salePrice: product.salePrice,
-                    regularPrice: product.regularPrice,
-                    quantity: 1,
-                    addedAt: DateTime.now(),
+            ValueListenableBuilder<Map<int, int>>(
+              valueListenable: _cartService.quantities,
+              builder: (context, quantities, _) {
+                final qty = quantities[product.id] ?? 0;
+                if (qty <= 0) {
+                  return GestureDetector(
+                    onTap: () async {
+                      await _cartService.addOrIncrement(
+                        CartProduct(
+                          id: product.id,
+                          name: product.name,
+                          images: product.images,
+                          imageUrl:
+                              product.images.isNotEmpty
+                                  ? product.images.first
+                                  : product.imageUrl,
+                          salePrice: product.salePrice,
+                          regularPrice: product.regularPrice,
+                          quantity: 1,
+                          addedAt: DateTime.now(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [Color(0xFF1B4965), Color(0xFF2B729C)],
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0xFFCAE9FF),
+                            blurRadius: 8.1,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.shopping_cart_outlined,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Add to Cart',
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return Container(
+                  width: double.infinity,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1B4965),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () async {
+                          if (qty <= 1) {
+                            await _cartService.remove(product.id);
+                          } else {
+                            await _cartService.setQuantity(product.id, qty - 1);
+                          }
+                        },
+                        icon: const Icon(Icons.remove, color: Colors.white),
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            '$qty',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () async {
+                          await _cartService.addOrIncrement(
+                            CartProduct(
+                              id: product.id,
+                              name: product.name,
+                              images: product.images,
+                              imageUrl:
+                                  product.images.isNotEmpty
+                                      ? product.images.first
+                                      : product.imageUrl,
+                              salePrice: product.salePrice,
+                              regularPrice: product.regularPrice,
+                              quantity: 1,
+                              addedAt: DateTime.now(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.add, color: Colors.white),
+                      ),
+                    ],
                   ),
                 );
               },
-              child: Container(
-                width: double.infinity,
-                height: 50,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [Color(0xFF1B4965), Color(0xFF2B729C)],
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0xFFCAE9FF),
-                      blurRadius: 8.1,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.shopping_cart_outlined,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Add to Cart',
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ],
         ),

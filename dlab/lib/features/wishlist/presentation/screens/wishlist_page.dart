@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../../../../core/services/cart_service.dart';
 import '../../../../core/services/wishlist_service.dart';
 import '../../../home/presentation/screens/dlabs_home_page.dart';
 import '../../../home/presentation/screens/product_details_page.dart';
@@ -29,6 +30,7 @@ class _WishlistPageState extends State<WishlistPage> {
   @override
   void initState() {
     super.initState();
+    CartService.instance.initialize();
     _load();
   }
 
@@ -521,6 +523,7 @@ class _WishlistCard extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onSelectToggle;
   final VoidCallback onUnlike;
+  static final CartService _cartService = CartService.instance;
 
   static const Color _primary = Color(0xFF1B4965);
   static const Color _textPrimary = Color(0xFF111827);
@@ -694,39 +697,127 @@ class _WishlistCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              height: 38,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [Color(0xFF1B4965), Color(0xFF2B729C)],
-                ),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6),
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      children: [
-                        Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 16),
-                        SizedBox(width: 5),
-                        Text(
-                          'Add to Cart',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+            ValueListenableBuilder<Map<int, int>>(
+              valueListenable: _cartService.quantities,
+              builder: (context, quantities, _) {
+                final qty = quantities[item.id] ?? 0;
+                if (qty <= 0) {
+                  return GestureDetector(
+                    onTap: () async {
+                      await _cartService.addOrIncrement(
+                        CartProduct(
+                          id: item.id,
+                          name: item.name,
+                          images: item.images,
+                          imageUrl:
+                              item.images.isNotEmpty
+                                  ? item.images.first
+                                  : item.imageUrl,
+                          salePrice: item.salePrice,
+                          regularPrice: item.regularPrice,
+                          quantity: 1,
+                          addedAt: DateTime.now(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [Color(0xFF1B4965), Color(0xFF2B729C)],
+                        ),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.shopping_cart_outlined,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 5),
+                                Text(
+                                  'Add to Cart',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
+                  );
+                }
+
+                return Container(
+                  width: double.infinity,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1B4965),
+                    borderRadius: BorderRadius.circular(9),
                   ),
-                ),
-              ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () async {
+                          if (qty <= 1) {
+                            await _cartService.remove(item.id);
+                          } else {
+                            await _cartService.setQuantity(item.id, qty - 1);
+                          }
+                        },
+                        icon: const Icon(Icons.remove, color: Colors.white, size: 16),
+                        splashRadius: 18,
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            '$qty',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () async {
+                          await _cartService.addOrIncrement(
+                            CartProduct(
+                              id: item.id,
+                              name: item.name,
+                              images: item.images,
+                              imageUrl:
+                                  item.images.isNotEmpty
+                                      ? item.images.first
+                                      : item.imageUrl,
+                              salePrice: item.salePrice,
+                              regularPrice: item.regularPrice,
+                              quantity: 1,
+                              addedAt: DateTime.now(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.add, color: Colors.white, size: 16),
+                        splashRadius: 18,
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ],
         ),
